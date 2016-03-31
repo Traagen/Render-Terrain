@@ -1,2 +1,2 @@
 # Render-Terrain
-DX12 Terrain Render
+DX12 Terrain Renderer
