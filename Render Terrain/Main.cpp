@@ -1,14 +1,17 @@
 #include <Windows.h>
+#include "Graphics.h"
 
 using namespace std;
+using namespace graphics;
 
 enum InitWinFailStates { OK = 1, RCX = -1, CDS = -2, CWX = -3};
-static const int WINDOW_HEIGHT = 1080;
-static const int WINDOW_WIDTH = 1920;
-static const bool FULL_SCREEN = false;
-static const LPCWSTR appName = L"Directx 12 Terrain Renderer";
-static HINSTANCE thisInstance;
-static HWND window;
+
+static const int		WINDOW_HEIGHT = 1080;	// dimensions for the window we're making.
+static const int		WINDOW_WIDTH = 1920;
+static const bool		FULL_SCREEN = false;
+static const LPCWSTR	appName = L"Directx 12 Terrain Renderer";
+static HINSTANCE		thisInstance;
+static HWND				window;
 
 static void KeyUp(UINT key) {
 	switch (key) {
@@ -29,6 +32,8 @@ static LRESULT CALLBACK WndProc(HWND win , UINT msg, WPARAM wp, LPARAM lp) {
 		default:
 			return DefWindowProc(win, msg, wp, lp);
 	}
+
+	return 0;
 }
 InitWinFailStates InitWin() {
 	// Get the instance of this application.
@@ -119,7 +124,7 @@ void KillWin() {
 
 int WINAPI WinMain(HINSTANCE instance, HINSTANCE prevInstance, PSTR cmdLine, int cmdShow) {
 	InitWinFailStates fs;
-	if (!(fs = InitWin())) { // this should trip if InitWin fails, then we can check fs against the possible fail state returns of InitWin.
+	if ((fs = InitWin()) != OK) { // this should trip if InitWin fails, then we can check fs against the possible fail state returns of InitWin.
 		switch (fs) {
 			case RCX: OutputDebugString(L"Error registering classex."); break;
 			case CDS: OutputDebugString(L"Error changing display settings."); break;
@@ -127,6 +132,12 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prevInstance, PSTR cmdLine, int
 		}
 
 		return 0;
+	}
+
+	Graphics GFX;
+	if (!GFX.Init(WINDOW_HEIGHT, WINDOW_WIDTH, window, FULL_SCREEN)) {
+		KillWin();
+		return 3;
 	}
 
 	MSG msg;
@@ -141,6 +152,8 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prevInstance, PSTR cmdLine, int
 			KillWin();
 			return 1;
 		}
+
+		if (!GFX.Render()) PostQuitMessage(0);
 	}
 
 	return 2;
