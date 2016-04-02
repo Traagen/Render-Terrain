@@ -7,21 +7,23 @@
 
 #include <d3d12.h>
 #include <dxgi1_5.h>
+#include <stdexcept>
 
 namespace graphics {
-
-	static const bool VSYNC_ENABLED = true;
 	static const float SCREEN_DEPTH = 1000.0f;
 	static const float SCREEN_NEAR = 0.1f;
 
-	class Graphics
-	{
+	class GFX_Exception : public std::runtime_error {
 	public:
-		Graphics();
+		GFX_Exception(const char *msg) : std::runtime_error(msg) {}
+	};
+	
+	class Graphics	{
+	public:
+		Graphics(int, int, HWND, bool);
 		~Graphics();
 
-		bool Init(int, int, HWND, bool);
-		bool Render();
+		void Render();
 
 	private:
 		ID3D12Device*				mDev;

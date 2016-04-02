@@ -1,4 +1,5 @@
 #include <Windows.h>
+#include <assert.h>
 #include "Graphics.h"
 
 using namespace std;
@@ -134,27 +135,29 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prevInstance, PSTR cmdLine, int
 		return 0;
 	}
 
-	Graphics GFX;
-	if (!GFX.Init(WINDOW_HEIGHT, WINDOW_WIDTH, window, FULL_SCREEN)) {
+	try {
+		Graphics GFX(WINDOW_HEIGHT, WINDOW_WIDTH, window, FULL_SCREEN);
+	
+		MSG msg;
+		ZeroMemory(&msg, sizeof(MSG));
+
+		while (1) {
+			if (PeekMessage(&msg, window, 0, 0, PM_REMOVE)) {
+				TranslateMessage(&msg);
+				DispatchMessage(&msg);
+			} 
+			if (msg.message == WM_QUIT) { 
+				KillWin();
+				return 1;
+			}
+
+			GFX.Render();
+		}
+
+		return 2;
+	} catch (GFX_Exception& e) {
+		OutputDebugStringA(e.what());
 		KillWin();
 		return 3;
 	}
-
-	MSG msg;
-	ZeroMemory(&msg, sizeof(MSG));
-
-	while (1) {
-		if (PeekMessage(&msg, window, 0, 0, PM_REMOVE)) {
-			TranslateMessage(&msg);
-			DispatchMessage(&msg);
-		} 
-		if (msg.message == WM_QUIT) { 
-			KillWin();
-			return 1;
-		}
-
-		if (!GFX.Render()) PostQuitMessage(0);
-	}
-
-	return 2;
 }
