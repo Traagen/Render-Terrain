@@ -22,7 +22,9 @@ namespace graphics {
 	static const D3D_FEATURE_LEVEL	FEATURE_LEVEL = D3D_FEATURE_LEVEL_11_0; // minimum feature level necessary for DirectX 12 compatibility.
 
 	struct Vertex {
+		Vertex(float x, float y, float z, float r, float g, float b, float a) : pos(x, y, z), color(r, g, b, a) {}
 		XMFLOAT3 pos;
+		XMFLOAT4 color;
 	};
 	
 	class GFX_Exception : public std::runtime_error {
@@ -49,6 +51,7 @@ namespace graphics {
 		ID3D12DescriptorHeap*		mRTVHeap; // Render Target View Heap
 		ID3D12Resource*				mBBRenderTarget[FRAME_BUFFER_COUNT];
 		ID3D12Resource*				mVertexBuffer;
+		ID3D12Resource*				mIndexBuffer;
 		ID3D12PipelineState*		mPipelineState;
 		ID3D12RootSignature*		mRootSig;
 		ID3D12Fence*				mFence[FRAME_BUFFER_COUNT];
@@ -56,6 +59,7 @@ namespace graphics {
 		D3D12_VIEWPORT				mViewport;
 		D3D12_RECT					mScissorRect;
 		D3D12_VERTEX_BUFFER_VIEW	mVBView;
+		D3D12_INDEX_BUFFER_VIEW		mIBView;
 		unsigned long long			mFenceValue[FRAME_BUFFER_COUNT];
 		unsigned int				mBufferIndex;
 		unsigned int				mRTVDescSize; // Descriptor sizes may vary from device to device, so keep the size around so we can increment an offset when necessary.
