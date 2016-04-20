@@ -50,16 +50,16 @@ namespace graphics {
 		IDXGISwapChain3*			mSwapChain;
 		ID3D12DescriptorHeap*		mRTVHeap; // Render Target View Heap
 		ID3D12Resource*				mBBRenderTarget[FRAME_BUFFER_COUNT];
-		ID3D12Resource*				mVertexBuffer;
-		ID3D12Resource*				mIndexBuffer;
+//		ID3D12Resource*				mVertexBuffer;
+//		ID3D12Resource*				mIndexBuffer;
 		ID3D12PipelineState*		mPipelineState;
 		ID3D12RootSignature*		mRootSig;
 		ID3D12Fence*				mFence[FRAME_BUFFER_COUNT];
 		HANDLE						mFenceEvent;
 		D3D12_VIEWPORT				mViewport;
 		D3D12_RECT					mScissorRect;
-		D3D12_VERTEX_BUFFER_VIEW	mVBView;
-		D3D12_INDEX_BUFFER_VIEW		mIBView;
+//		D3D12_VERTEX_BUFFER_VIEW	mVBView;
+//		D3D12_INDEX_BUFFER_VIEW		mIBView;
 		unsigned long long			mFenceValue[FRAME_BUFFER_COUNT];
 		unsigned int				mBufferIndex;
 		unsigned int				mRTVDescSize; // Descriptor sizes may vary from device to device, so keep the size around so we can increment an offset when necessary.

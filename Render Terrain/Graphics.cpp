@@ -9,7 +9,8 @@ namespace graphics {
 		mRTVHeap = 0;
 		mPipelineState = 0;
 		mFenceEvent = 0;
-		mVertexBuffer = 0;
+//		mVertexBuffer = 0;
+//		mIndexBuffer = 0;
 		mRootSig = 0;
 		for (int i = 0; i < FRAME_BUFFER_COUNT; ++i) {
 			mCmdAllocator[i] = 0;
@@ -207,7 +208,7 @@ namespace graphics {
 		// create input layout.
 		D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
 			{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-			{"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}
+//			{"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}
 		};
 		inputLayoutDesc.NumElements = sizeof(inputLayout) / sizeof(D3D12_INPUT_ELEMENT_DESC);
 		inputLayoutDesc.pInputElementDescs = inputLayout;
@@ -232,7 +233,7 @@ namespace graphics {
 		if (FAILED(mDev->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&mPipelineState)))) {
 			throw GFX_Exception("Failed to CreateGraphicsPipeline on init");
 		}
-
+/*
 		// create the vertex buffer and fill it.
 		// create 4 vertices for 2 triangles.
 		Vertex vertices[] = {
@@ -301,7 +302,7 @@ namespace graphics {
 		// upload the data to the GPU and copy from the upload heap to the default heap.
 		UpdateSubresources(mCmdList, mIndexBuffer, ibUploadHeap, 0, 0, 1, &indexData);
 		mCmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(mIndexBuffer, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER));
-				
+	*/			
 		mCmdList->Close();
 		ID3D12CommandList* cmdLists[] = { mCmdList };
 		mCmdQ->ExecuteCommandLists(1, cmdLists);
@@ -310,7 +311,7 @@ namespace graphics {
 		if (FAILED(mCmdQ->Signal(mFence[mBufferIndex], mFenceValue[mBufferIndex]))) {
 			throw GFX_Exception("CommandQueue Signal add failed on init.");
 		}
-
+/*
 		// create a vertex buffer view.
 		mVBView.BufferLocation = mVertexBuffer->GetGPUVirtualAddress();
 		mVBView.StrideInBytes = sizeof(Vertex);
@@ -320,7 +321,7 @@ namespace graphics {
 		mIBView.BufferLocation = mIndexBuffer->GetGPUVirtualAddress();
 		mIBView.Format = DXGI_FORMAT_R32_UINT;
 		mIBView.SizeInBytes = ibSize;
-
+*/
 		// create a viewport and scissor rectangle.
 		mViewport.TopLeftX = 0;
 		mViewport.TopLeftY = 0;
@@ -354,7 +355,7 @@ namespace graphics {
 			mRootSig->Release();
 			mRootSig = NULL;
 		}
-
+/*
 		if (mVertexBuffer) {
 			mVertexBuffer->Release();
 			mVertexBuffer = NULL;
@@ -364,7 +365,7 @@ namespace graphics {
 			mIndexBuffer->Release();
 			mIndexBuffer = NULL;
 		}
-
+*/
 		if (mCmdList) {
 			mCmdList->Release();
 			mCmdList = NULL;
@@ -428,9 +429,10 @@ namespace graphics {
 		mCmdList->RSSetViewports(1, &mViewport);
 		mCmdList->RSSetScissorRects(1, &mScissorRect); 
 		mCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST); // describe how to read the vertex buffer.
-		mCmdList->IASetVertexBuffers(0, 1, &mVBView); // set the vertex buffer using the view.
-		mCmdList->IASetIndexBuffer(&mIBView); // set the index buffer using the view.
-		mCmdList->DrawIndexedInstanced(6, 1, 0, 0, 0); // draw 6 vertices for 2 triangles.
+//		mCmdList->IASetVertexBuffers(0, 1, &mVBView); // set the vertex buffer using the view.
+//		mCmdList->IASetIndexBuffer(&mIBView); // set the index buffer using the view.
+//		mCmdList->DrawIndexedInstanced(6, 1, 0, 0, 0); // draw 6 vertices for 2 triangles.
+		mCmdList->DrawInstanced(3, 1, 0, 0);
 
 		// switch back buffer to present state.
 		mCmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(mBBRenderTarget[mBufferIndex], D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT));
