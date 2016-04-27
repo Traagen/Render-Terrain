@@ -1,6 +1,6 @@
 //#include <Windows.h>
 #include "Window.h"
-#include "Graphics.h"
+#include "Scene.h"
 
 using namespace std;
 using namespace graphics;
@@ -38,7 +38,8 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prevInstance, PSTR cmdLine, int
 	try {
 		Window WIN(appName, WINDOW_HEIGHT, WINDOW_WIDTH, WndProc, FULL_SCREEN);
 		Graphics GFX(WINDOW_HEIGHT, WINDOW_WIDTH, WIN.GetWindow(), FULL_SCREEN);
-	
+		Scene S(WINDOW_HEIGHT, WINDOW_WIDTH, &GFX);
+
 		MSG msg;
 		ZeroMemory(&msg, sizeof(MSG));
 
@@ -51,7 +52,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prevInstance, PSTR cmdLine, int
 				return 1;
 			}
 
-			GFX.Render();
+			S.Draw();
 		}
 
 		return 2;

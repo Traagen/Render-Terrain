@@ -52,7 +52,7 @@ Window::Window(LPCWSTR appName, int height, int width, WNDPROC WndProc, bool isF
 		if (ChangeDisplaySettings(&dmScreenSettings, CDS_FULLSCREEN) != DISP_CHANGE_SUCCESSFUL) {
 			throw Window_Exception("ChangeDisplaySettings for fullscreen on window init failed.");
 		}
-																													// Set the position of the window to the top left corner.
+		// Set the position of the window to the top left corner.
 		posX = posY = 0;
 	}
 	else {

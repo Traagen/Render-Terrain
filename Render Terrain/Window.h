@@ -12,7 +12,7 @@ namespace window {
 	class Window
 	{
 	public:
-		Window(LPCWSTR, int, int, WNDPROC, bool);
+		Window(LPCWSTR appName, int height, int width, WNDPROC WndProc, bool isFullscreen);
 		~Window();
 
 		HWND GetWindow() { return mWindow; }
