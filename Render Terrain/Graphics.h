@@ -42,10 +42,15 @@ namespace graphics {
 
 		// Returns a pointer to the command list.
 		ID3D12GraphicsCommandList* GetCommandList();	
-		// Create and pass back a pointer to a new root signature matching the provided description.
+		// Create and return a pointer to a new root signature matching the provided description.
 		void CreateRootSig(CD3DX12_ROOT_SIGNATURE_DESC rootDesc, ID3D12RootSignature*& rootSig);
-		// Create and pass back a pointer to a new Pipeline State Object matching the provided description.
+		// Create and return a pointer to a new Pipeline State Object matching the provided description.
 		void CreatePSO(D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc, ID3D12PipelineState*& PSO);
+		// Create and return a pointer to a Descriptor Heap.
+		void CreateDescriptorHeap(D3D12_DESCRIPTOR_HEAP_DESC heapDesc, ID3D12DescriptorHeap*& heap);
+		// Create and upload to the gpu a shader resource and create a view for it.
+		void CreateSRV(D3D12_RESOURCE_DESC texDesc, ID3D12Resource*& tex, D3D12_SUBRESOURCE_DATA texData, 
+					   D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc, D3D12_RESOURCE_STATES resourceType, ID3D12DescriptorHeap* heap);
 
 	private:
 		// Waits for and confirms that the GPU is done running any commands on the current back buffer.

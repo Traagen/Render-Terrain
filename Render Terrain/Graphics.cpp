@@ -151,8 +151,6 @@ namespace graphics {
 		if (!mFenceEvent) {
 			throw GFX_Exception("Create Fence Event failed on init.");
 		}
-
-		mpCmdList->Close();
 	}
 
 	Graphics::~Graphics() {
@@ -225,6 +223,41 @@ namespace graphics {
 		if (FAILED(mpDev->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&PSO)))) {
 			throw GFX_Exception("Failed to CreateGraphicsPipeline.");
 		}
+	}
+
+	// Create and return a pointer to a Descriptor Heap.
+	void Graphics::CreateDescriptorHeap(D3D12_DESCRIPTOR_HEAP_DESC heapDesc, ID3D12DescriptorHeap*& heap) {
+		if FAILED(mpDev->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&heap))) {
+			throw GFX_Exception("Failed to create descriptor heap.");
+		}
+	}
+
+	// Create and upload to the gpu a shader resource and create a view for it.
+	void Graphics::CreateSRV(D3D12_RESOURCE_DESC texDesc, ID3D12Resource*& tex, D3D12_SUBRESOURCE_DATA texData, 
+						     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc, D3D12_RESOURCE_STATES resourceType, ID3D12DescriptorHeap* heap) {
+		// Create the resource heap on the gpu.
+		if (FAILED(mpDev->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT), D3D12_HEAP_FLAG_NONE, &texDesc, 
+												  D3D12_RESOURCE_STATE_COPY_DEST, NULL, IID_PPV_ARGS(&tex)))) {
+			throw GFX_Exception("Failed to create default heap on CreateSRV.");
+		}
+
+		// Create an upload heap.
+		const auto buffSize = GetRequiredIntermediateSize(tex, 0, 1);
+		ID3D12Resource* uploadHeap;
+		if (FAILED(mpDev->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD), D3D12_HEAP_FLAG_NONE, 
+												  &CD3DX12_RESOURCE_DESC::Buffer(buffSize), D3D12_RESOURCE_STATE_GENERIC_READ, 
+												  NULL, IID_PPV_ARGS(&uploadHeap)))) {
+			throw GFX_Exception("Failed to create upload heap on CreateSRV.");
+		}
+
+		// copy the data to the upload heap.
+		const unsigned int subresourceCount = texDesc.DepthOrArraySize * texDesc.MipLevels;
+		UpdateSubresources(mpCmdList, tex, uploadHeap, 0, 0, subresourceCount, &texData);
+		mpCmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(tex, D3D12_RESOURCE_STATE_COPY_DEST, resourceType));
+
+		mpDev->CreateShaderResourceView(tex, &srvDesc, heap->GetCPUDescriptorHandleForHeapStart());
+
+//		uploadHeap->Release();
 	}
 
 	// set the back buffer as the render target for the provided command list.

@@ -155,6 +155,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Graphics.cpp" />
+    <ClCompile Include="lodepng.cpp" />
     <ClCompile Include="Main.cpp" />
     <ClCompile Include="Scene.cpp" />
     <ClCompile Include="Terrain.cpp" />
@@ -163,6 +164,7 @@
   <ItemGroup>
     <ClInclude Include="D3DX12.h" />
     <ClInclude Include="Graphics.h" />
+    <ClInclude Include="lodepng.h" />
     <ClInclude Include="Scene.h" />
     <ClInclude Include="Terrain.h" />
     <ClInclude Include="Window.h" />

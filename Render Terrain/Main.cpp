@@ -7,8 +7,8 @@ using namespace graphics;
 using namespace window;
 
 static const LPCWSTR	appName = L"Directx 12 Terrain Renderer";
-static const int		WINDOW_HEIGHT = 1080;	// dimensions for the window we're making.
-static const int		WINDOW_WIDTH = 1920;
+static const int		WINDOW_HEIGHT = 2048;	// dimensions for the window we're making.
+static const int		WINDOW_WIDTH = 2048;
 static const bool		FULL_SCREEN = false;
 
 static void KeyUp(UINT key) {

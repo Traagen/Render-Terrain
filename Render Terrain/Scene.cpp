@@ -16,6 +16,11 @@ Scene::Scene(int height, int width, Graphics* GFX) : T(GFX) {
 	mScissorRect.top = 0;
 	mScissorRect.right = width;
 	mScissorRect.bottom = height;
+
+	// after creating and initializing the heightmap for the terrain, we need to close the command list
+	// and tell the Graphics object to execute the command list to actually finish the subresource init.
+	CloseCommandLists();
+	mpGFX->Render();
 }
 
 
