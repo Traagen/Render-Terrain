@@ -49,7 +49,7 @@ namespace graphics {
 		// Create and return a pointer to a Descriptor Heap.
 		void CreateDescriptorHeap(D3D12_DESCRIPTOR_HEAP_DESC heapDesc, ID3D12DescriptorHeap*& heap);
 		// Create and upload to the gpu a shader resource and create a view for it.
-		void CreateSRV(D3D12_RESOURCE_DESC texDesc, ID3D12Resource*& tex, D3D12_SUBRESOURCE_DATA texData, 
+		void CreateSRV(D3D12_RESOURCE_DESC texDesc, ID3D12Resource*& tex, ID3D12Resource*& upload, D3D12_SUBRESOURCE_DATA texData, 
 					   D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc, D3D12_RESOURCE_STATES resourceType, ID3D12DescriptorHeap* heap);
 
 	private:

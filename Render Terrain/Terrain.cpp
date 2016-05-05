@@ -116,28 +116,35 @@ Terrain::Terrain(Graphics* GFX) {
 	texData.RowPitch = mWidth * 4;
 	texData.SlicePitch = mHeight * mWidth * 4;
 
-	GFX->CreateSRV(texDesc, mpHeightmap, texData, srvDesc, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, mpSRVHeap);
+	GFX->CreateSRV(texDesc, mpHeightmap, mpUpload, texData, srvDesc, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, mpSRVHeap);
 }
 
 Terrain::~Terrain() {
-	if (mpRootSig) {
-		mpRootSig->Release();
-		mpRootSig = NULL;
+	// The order resources are released appears to matter. I haven't tested all possible orders, but at least releasing the heap
+	// and resources after the pso and rootsig was causing my GPU to hang on shutdown. Using the current order resolved that issue.
+	if (mpSRVHeap) {
+		mpSRVHeap->Release();
+		mpSRVHeap = 0;
+	}
+
+	if (mpUpload) {
+		mpUpload->Release();
+		mpUpload = 0;
+	}
+
+	if (mpHeightmap) {
+		mpHeightmap->Release();
+		mpHeightmap = 0;
 	}
 
 	if (mpPSO) {
 		mpPSO->Release();
 		mpPSO = 0;
 	}
-
-	if (mpSRVHeap) {
-		mpSRVHeap->Release();
-		mpSRVHeap = 0;
-	}
-
-	if (mpHeightmap) {
-		mpHeightmap->Release();
-		mpHeightmap = 0;
+	
+	if (mpRootSig) {
+		mpRootSig->Release();
+		mpRootSig = NULL;
 	}
 }
 
