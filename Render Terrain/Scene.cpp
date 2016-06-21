@@ -1,7 +1,14 @@
+/*
+Scene.cpp
+
+Author:			Chris Serson
+Last Edited:	June 21, 2016
+
+Description:	Class for creating, managing, and rendering a scene.
+*/
 #include "Scene.h"
 
 Scene::Scene(int height, int width, Graphics* GFX) : T(GFX) {
-	mpCmdList = GFX->GetCommandList();
 	mpGFX = GFX;
 
 	// create a viewport and scissor rectangle.
@@ -25,29 +32,29 @@ Scene::Scene(int height, int width, Graphics* GFX) : T(GFX) {
 
 
 Scene::~Scene() {
-	mpCmdList = 0; // we don't want to release the command list here as it is owned by the Graphics object. Just set the pointer to null so we know it's free.
 	mpGFX = 0;
 }
 
 // Close all command lists. Currently there is only the one.
 void Scene::CloseCommandLists() {
 	// close the command list.
-	if (FAILED(mpCmdList->Close())) {
+	if (FAILED(mpGFX->GetCommandList()->Close())) {
 		throw GFX_Exception("CommandList Close failed.");
 	}
 }
 
 void Scene::SetViewport() {
-	mpCmdList->RSSetViewports(1, &mViewport);
-	mpCmdList->RSSetScissorRects(1, &mScissorRect);
+	ID3D12GraphicsCommandList* cmdList = mpGFX->GetCommandList();
+	cmdList->RSSetViewports(1, &mViewport);
+	cmdList->RSSetScissorRects(1, &mScissorRect);
 }
 
 void Scene::Draw() {
 	mpGFX->ResetPipeline();
-	mpGFX->SetBackBufferRender(mpCmdList);
+	mpGFX->SetBackBufferRender(mpGFX->GetCommandList());
 	SetViewport();
-	T.Draw(mpCmdList);
-	mpGFX->SetBackBufferPresent(mpCmdList);
+	T.Draw(mpGFX->GetCommandList());
+	mpGFX->SetBackBufferPresent(mpGFX->GetCommandList());
 	CloseCommandLists();
 	mpGFX->Render();
 }

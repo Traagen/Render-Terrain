@@ -212,3 +212,6 @@ FakesAssemblies/
 GeneratedArtifacts/
 _Pvt_Extensions/
 ModelManifest.xml
+/Render Terrain/hmsmall.jpg
+/Render Terrain/heightmap.jpg
+/Render Terrain/blank window.png

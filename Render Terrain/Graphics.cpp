@@ -1,3 +1,11 @@
+/*
+Graphics.cpp
+
+Author:			Chris Serson
+Last Edited:	June 21, 2016
+
+Description:	Class for creating and managing a Direct3D 12 instance.
+*/
 #include "Graphics.h"
 
 namespace graphics {

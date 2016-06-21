@@ -1,3 +1,12 @@
+/*
+Terrain.cpp
+
+Author:			Chris Serson
+Last Edited:	June 21, 2016
+
+Description:	Class for loading a heightmap and rendering as a terrain.
+				Currently renders only as 2D texture view.
+*/
 #include "lodepng.h"
 #include "Terrain.h"
 
@@ -94,7 +103,7 @@ Terrain::Terrain(Graphics* GFX) {
 
 	GFX->CreatePSO(psoDesc, mpPSO);
 
-	LoadHeightMap("heightmap.png");
+	LoadHeightMap("heightmap2.png");
 	// create the texture.
 	texDesc.MipLevels = 1;
 	texDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -162,6 +171,6 @@ void Terrain::Draw(ID3D12GraphicsCommandList* cmdList) {
 void Terrain::LoadHeightMap(const char* filename) {
 	//decode
 	unsigned error = lodepng::decode(mvImage, mWidth, mHeight, filename);
-
+	
 	if (error) throw GFX_Exception("Error loading heightmap texture.");
 }

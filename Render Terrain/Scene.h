@@ -1,3 +1,21 @@
+/*
+Scene.h
+
+Author:			Chris Serson
+Last Edited:	June 21, 2016
+
+Description:	Class for creating, managing, and rendering a scene.
+
+Usage:			- Calling the constructor, either through Scene S(...);
+				or Scene* S; S = new Scene(...);, will initialize
+				the scene.
+				- Proper shutdown is handled by the destructor.
+				- Requires a pointer to a Graphics object be passed in.
+				- Is hard-coded for Direct3D 12.
+				- Call Draw() in the main loop to render the scene.
+				
+Future Work:	- Add support for multi-threaded rendering.
+*/
 #pragma once
 
 #include "Terrain.h"
@@ -18,9 +36,6 @@ private:
 	void SetViewport();
 
 	Graphics*					mpGFX;
-	/* The Scene will need it's own pointer to the command list so it can send commands to the gpu.
-	   The command list must be given to it by the Graphics object on init. */
-	ID3D12GraphicsCommandList*	mpCmdList;	
 	Terrain						T;
 	D3D12_VIEWPORT				mViewport;
 	D3D12_RECT					mScissorRect;

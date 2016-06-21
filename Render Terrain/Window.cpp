@@ -1,3 +1,11 @@
+/*
+Window.cpp
+
+Author:			Chris Serson
+Last Edited:	June 21, 2016
+
+Description:	Class for creating a window in a Win32 application.
+*/
 #include "Window.h"
 
 using namespace window;
@@ -54,6 +62,8 @@ Window::Window(LPCWSTR appName, int height, int width, WNDPROC WndProc, bool isF
 		}
 		// Set the position of the window to the top left corner.
 		posX = posY = 0;
+		mHeight = h;
+		mWidth = w;
 	}
 	else {
 		// Place the window in the middle of the screen.
@@ -65,7 +75,7 @@ Window::Window(LPCWSTR appName, int height, int width, WNDPROC WndProc, bool isF
 	}
 
 	// Create the window with the screen settings and get the handle to it.
-	mWindow = CreateWindowEx(WS_EX_APPWINDOW, mAppName, mAppName, WS_POPUP, posX, posY, w, h, NULL, NULL, mInstance, NULL);
+	mWindow = CreateWindowEx(WS_EX_APPWINDOW, mAppName, mAppName, WS_OVERLAPPEDWINDOW, posX, posY, w, h, NULL, NULL, mInstance, NULL);
 	if (!mWindow) {
 		throw Window_Exception("Failed to CreateWindowEx on window init.");
 	}

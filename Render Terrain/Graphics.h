@@ -1,3 +1,31 @@
+/*
+Graphics.h
+
+Author:			Chris Serson
+Last Edited:	June 21, 2016
+
+Description:	Class for creating and managing a Direct3D 12 instance.
+
+Usage:			- Calling the constructor, either through Graphics GFX(...);
+				or Graphics* GFX; GFX = new Graphics(...);, will find a
+				Direct3D 12 compatible hardware device and initialize
+				Direct3D on it.
+				- Proper shutdown is handled by the destructor.
+				- All requests to the graphics device must go through the
+				Graphics object. This includes RTVs, SRVs, and PSOs.
+				- The calling object can request a Command List from the Graphics
+				object (GetCommandList()). Currently only supports 1 thread.
+				- The calling object must tell the Graphics object when to
+				reset the pipeline for a new frame (ResetPipeline()), 
+				when to swap the buffers (SetBackBufferRender(), SetBackBufferPresent(), 
+				and when to actually execute the command list (Render()).
+
+Future Work:	- Add support for Depth/Stencil buffers.
+				- Add support for multi-threaded graphics applications.
+				- Clean up constructor code. Can be broken up into smaller
+				functions to make more readable.
+				- Needs to be more generic, with less hard-coded values.
+*/
 #pragma once
 
 // Linkages
@@ -20,6 +48,7 @@ namespace graphics {
 	static const DXGI_FORMAT DESIRED_FORMAT = DXGI_FORMAT_R8G8B8A8_UNORM;
 	static const int FRAME_BUFFER_COUNT = 3; // triple buffering.
 	static const D3D_FEATURE_LEVEL	FEATURE_LEVEL = D3D_FEATURE_LEVEL_11_0; // minimum feature level necessary for DirectX 12 compatibility.
+																			// this is all my current card supports.
 
 	class GFX_Exception : public std::runtime_error {
 	public:
@@ -55,7 +84,7 @@ namespace graphics {
 	private:
 		// Waits for and confirms that the GPU is done running any commands on the current back buffer.
 		void WaitOnBackBuffer(); 
-
+		
 		ID3D12Device*				mpDev;
 		ID3D12CommandQueue*			mpCmdQ;
 		ID3D12CommandAllocator*		maCmdAllocators[FRAME_BUFFER_COUNT];
