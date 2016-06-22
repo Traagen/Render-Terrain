@@ -265,7 +265,7 @@ namespace graphics {
 	}
 
 	// set the back buffer as the render target for the provided command list.
-	void Graphics::SetBackBufferRender(ID3D12GraphicsCommandList* cmdList) {
+	void Graphics::SetBackBufferRender(ID3D12GraphicsCommandList* cmdList, const float clearColor[4]) {
 		// set back buffer to render target.
 		cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(maBackBuffers[mBufferIndex], D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET));
 
@@ -273,8 +273,6 @@ namespace graphics {
 		CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(mpRTVHeap->GetCPUDescriptorHandleForHeapStart(), mBufferIndex, mRTVDescSize);
 		cmdList->OMSetRenderTargets(1, &rtvHandle, false, NULL);
 
-		// set a clear color.
-		const float clearColor[] = { 0.0f, 0.0f, 0.0f, 1.0f };
 		cmdList->ClearRenderTargetView(rtvHandle, clearColor, 0, NULL);
 	}
 

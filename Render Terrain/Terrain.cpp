@@ -9,6 +9,7 @@ Description:	Class for loading a heightmap and rendering as a terrain.
 */
 #include "lodepng.h"
 #include "Terrain.h"
+#include <random>
 
 Terrain::Terrain(Graphics* GFX) {
 	ID3DBlob*							VS;
@@ -104,6 +105,7 @@ Terrain::Terrain(Graphics* GFX) {
 	GFX->CreatePSO(psoDesc, mpPSO);
 
 	LoadHeightMap("heightmap2.png");
+	
 	// create the texture.
 	texDesc.MipLevels = 1;
 	texDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -121,11 +123,12 @@ Terrain::Terrain(Graphics* GFX) {
 	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 	srvDesc.Texture2D.MipLevels = texDesc.MipLevels;
 
-	texData.pData = mvImage.data();
+	texData.pData = maImage;
 	texData.RowPitch = mWidth * 4;
 	texData.SlicePitch = mHeight * mWidth * 4;
-
+	//ID3D12Resource*				mpUpload;
 	GFX->CreateSRV(texDesc, mpHeightmap, mpUpload, texData, srvDesc, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, mpSRVHeap);
+
 }
 
 Terrain::~Terrain() {
@@ -155,6 +158,8 @@ Terrain::~Terrain() {
 		mpRootSig->Release();
 		mpRootSig = NULL;
 	}
+
+	delete maImage;
 }
 
 void Terrain::Draw(ID3D12GraphicsCommandList* cmdList) {
@@ -168,9 +173,9 @@ void Terrain::Draw(ID3D12GraphicsCommandList* cmdList) {
 }
 
 // load the specified file containing the heightmap data.
+
 void Terrain::LoadHeightMap(const char* filename) {
 	//decode
-	unsigned error = lodepng::decode(mvImage, mWidth, mHeight, filename);
-	
+	unsigned error = lodepng_decode32_file(&maImage, &mWidth, &mHeight, filename);
 	if (error) throw GFX_Exception("Error loading heightmap texture.");
 }

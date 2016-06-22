@@ -44,7 +44,7 @@ private:
 	ID3D12Resource*				mpHeightmap;
 	ID3D12Resource*				mpUpload;	// upload buffer for the heightmap.
 	ID3D12DescriptorHeap*		mpSRVHeap;	// Shader Resource View Heap
-	std::vector<unsigned char>	mvImage;	// the raw pixels
+	unsigned char*				maImage;
 	unsigned int				mWidth;
 	unsigned int				mHeight;
 };

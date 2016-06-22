@@ -51,7 +51,11 @@ void Scene::SetViewport() {
 
 void Scene::Draw() {
 	mpGFX->ResetPipeline();
-	mpGFX->SetBackBufferRender(mpGFX->GetCommandList());
+
+	// set a clear color.
+	const float clearColor[] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	mpGFX->SetBackBufferRender(mpGFX->GetCommandList(), clearColor);
+
 	SetViewport();
 	T.Draw(mpGFX->GetCommandList());
 	mpGFX->SetBackBufferPresent(mpGFX->GetCommandList());

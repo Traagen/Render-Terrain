@@ -65,7 +65,7 @@ namespace graphics {
 		// reset the pipeline for the next frame.
 		void ResetPipeline();
 		// set the back buffer as the render target for the provided command list.
-		void SetBackBufferRender(ID3D12GraphicsCommandList* cmdList);
+		void SetBackBufferRender(ID3D12GraphicsCommandList* cmdList, const float clearColor[4]);
 		// set the back buffer as presenting for the provided command list.
 		void SetBackBufferPresent(ID3D12GraphicsCommandList* cmdList);
 
