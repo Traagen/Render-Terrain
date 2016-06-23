@@ -2,7 +2,7 @@
 Scene.h
 
 Author:			Chris Serson
-Last Edited:	June 21, 2016
+Last Edited:	June 23, 2016
 
 Description:	Class for creating, managing, and rendering a scene.
 
@@ -19,6 +19,7 @@ Future Work:	- Add support for multi-threaded rendering.
 #pragma once
 
 #include "Terrain.h"
+#include "Camera.h"
 
 using namespace graphics;
 
@@ -35,9 +36,10 @@ private:
 	// Set the viewport and scissor rectangle for the scene.
 	void SetViewport();
 
-	Graphics*					mpGFX;
-	Terrain						T;
-	D3D12_VIEWPORT				mViewport;
-	D3D12_RECT					mScissorRect;
+	Graphics*		mpGFX;
+	Terrain			T;
+	Camera			C;
+	D3D12_VIEWPORT	mViewport;
+	D3D12_RECT		mScissorRect;
 };
 

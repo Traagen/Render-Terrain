@@ -2,7 +2,7 @@
 Graphics.h
 
 Author:			Chris Serson
-Last Edited:	June 21, 2016
+Last Edited:	June 23, 2016
 
 Description:	Class for creating and managing a Direct3D 12 instance.
 
@@ -49,6 +49,7 @@ namespace graphics {
 	static const int FRAME_BUFFER_COUNT = 3; // triple buffering.
 	static const D3D_FEATURE_LEVEL	FEATURE_LEVEL = D3D_FEATURE_LEVEL_11_0; // minimum feature level necessary for DirectX 12 compatibility.
 																			// this is all my current card supports.
+	enum ShaderType { PIXEL_SHADER, VERTEX_SHADER };
 
 	class GFX_Exception : public std::runtime_error {
 	public:
@@ -70,7 +71,10 @@ namespace graphics {
 		void SetBackBufferPresent(ID3D12GraphicsCommandList* cmdList);
 
 		// Returns a pointer to the command list.
-		ID3D12GraphicsCommandList* GetCommandList();	
+		ID3D12GraphicsCommandList* GetCommandList() { return mpCmdList; }
+
+		UINT GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE ht);
+
 		// Create and return a pointer to a new root signature matching the provided description.
 		void CreateRootSig(CD3DX12_ROOT_SIGNATURE_DESC rootDesc, ID3D12RootSignature*& rootSig);
 		// Create and return a pointer to a new Pipeline State Object matching the provided description.
@@ -79,11 +83,17 @@ namespace graphics {
 		void CreateDescriptorHeap(D3D12_DESCRIPTOR_HEAP_DESC heapDesc, ID3D12DescriptorHeap*& heap);
 		// Create and upload to the gpu a shader resource and create a view for it.
 		void CreateSRV(D3D12_RESOURCE_DESC texDesc, ID3D12Resource*& tex, ID3D12Resource*& upload, D3D12_SUBRESOURCE_DATA texData, 
-					   D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc, D3D12_RESOURCE_STATES resourceType, ID3D12DescriptorHeap* heap);
+					   D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc, D3D12_RESOURCE_STATES resourceType, ID3D12DescriptorHeap* heap, UINT64 offset);
+		// Create a constant buffer view
+		void CreateCBV(D3D12_CONSTANT_BUFFER_VIEW_DESC desc, D3D12_CPU_DESCRIPTOR_HANDLE handle);
+		void CreateBuffer(ID3D12Resource*& buffer, UINT size);
+		// Compile the specified shader.
+		void CompileShader(LPCWSTR filename, D3D12_SHADER_BYTECODE& shaderBytecode, ShaderType st);
+		// Waits for and confirms that the GPU is done running any commands on the current back buffer.
+		void LoadAssets();
 
 	private:
-		// Waits for and confirms that the GPU is done running any commands on the current back buffer.
-		void WaitOnBackBuffer(); 
+		void NextFrame();
 		
 		ID3D12Device*				mpDev;
 		ID3D12CommandQueue*			mpCmdQ;

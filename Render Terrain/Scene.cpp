@@ -2,13 +2,13 @@
 Scene.cpp
 
 Author:			Chris Serson
-Last Edited:	June 21, 2016
+Last Edited:	June 23, 2016
 
 Description:	Class for creating, managing, and rendering a scene.
 */
 #include "Scene.h"
 
-Scene::Scene(int height, int width, Graphics* GFX) : T(GFX) {
+Scene::Scene(int height, int width, Graphics* GFX) : T(GFX), C(height, width) {
 	mpGFX = GFX;
 
 	// create a viewport and scissor rectangle.
@@ -27,12 +27,12 @@ Scene::Scene(int height, int width, Graphics* GFX) : T(GFX) {
 	// after creating and initializing the heightmap for the terrain, we need to close the command list
 	// and tell the Graphics object to execute the command list to actually finish the subresource init.
 	CloseCommandLists();
-	mpGFX->Render();
+	mpGFX->LoadAssets();
 }
 
 
 Scene::~Scene() {
-	mpGFX = 0;
+	mpGFX = nullptr;
 }
 
 // Close all command lists. Currently there is only the one.
@@ -57,7 +57,10 @@ void Scene::Draw() {
 	mpGFX->SetBackBufferRender(mpGFX->GetCommandList(), clearColor);
 
 	SetViewport();
-	T.Draw(mpGFX->GetCommandList());
+
+	T.SetViewProjectionMatrixTransposed(C.GetViewProjectionMatrixTransposed());
+//	T.Draw2D(mpGFX->GetCommandList());
+	T.Draw3D(mpGFX->GetCommandList());
 	mpGFX->SetBackBufferPresent(mpGFX->GetCommandList());
 	CloseCommandLists();
 	mpGFX->Render();

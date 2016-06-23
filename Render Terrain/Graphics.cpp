@@ -2,7 +2,7 @@
 Graphics.cpp
 
 Author:			Chris Serson
-Last Edited:	June 21, 2016
+Last Edited:	June 23, 2016
 
 Description:	Class for creating and managing a Direct3D 12 instance.
 */
@@ -10,16 +10,16 @@ Description:	Class for creating and managing a Direct3D 12 instance.
 
 namespace graphics {
 	Graphics::Graphics(int height, int width, HWND win, bool fullscreen) {
-		mpDev = 0;
-		mpCmdQ = 0;
-		mpCmdList = 0;
-		mpSwapChain = 0;
-		mpRTVHeap = 0;
-		mFenceEvent = 0;
+		mpDev = nullptr;
+		mpCmdQ = nullptr;
+		mpCmdList = nullptr;
+		mpSwapChain = nullptr;
+		mpRTVHeap = nullptr;
+		mFenceEvent = nullptr;
 		for (int i = 0; i < FRAME_BUFFER_COUNT; ++i) {
-			maCmdAllocators[i] = 0;
-			maBackBuffers[i] = 0;
-			maFences[i] = 0;
+			maCmdAllocators[i] = nullptr;
+			maBackBuffers[i] = nullptr;
+			maFences[i] = nullptr;
 		}
 
 		D3D12_COMMAND_QUEUE_DESC			cmdQDesc = {};
@@ -166,49 +166,48 @@ namespace graphics {
 		if (mpSwapChain) {
 			mpSwapChain->SetFullscreenState(false, NULL);
 			mpSwapChain->Release();
-			mpSwapChain = NULL;
+			mpSwapChain = nullptr;
 		}
 
 		CloseHandle(mFenceEvent);
 
 		if (mpCmdList) {
 			mpCmdList->Release();
-			mpCmdList = NULL;
+			mpCmdList = nullptr;
 		}
 
 		for (int i = 0; i < FRAME_BUFFER_COUNT; ++i) {
 			if (maFences[i]) {
 				maFences[i]->Release();
-				maFences[i] = NULL;
+				maFences[i] = nullptr;
 			}
 
 			if (maCmdAllocators[i]) {
 				maCmdAllocators[i]->Release();
-				maCmdAllocators[i] = NULL;
+				maCmdAllocators[i] = nullptr;
 			}
 
 			if (maBackBuffers[i]) {
 				maBackBuffers[i]->Release();
-				maBackBuffers[i] = NULL;
+				maBackBuffers[i] = nullptr;
 			}
 		}
 		if (mpRTVHeap) {
 			mpRTVHeap->Release();
-			mpRTVHeap = NULL;
+			mpRTVHeap = nullptr;
 		}
 		if (mpCmdQ) {
 			mpCmdQ->Release();
-			mpCmdQ = NULL;
+			mpCmdQ = nullptr;
 		}
 		if (mpDev) {
 			mpDev->Release();
-			mpDev = NULL;
+			mpDev = nullptr;
 		}
 	}
 	
-	// Returns a pointer to the command list.
-	ID3D12GraphicsCommandList* Graphics::GetCommandList() {
-		return mpCmdList;
+	UINT Graphics::GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE ht) {
+		return mpDev->GetDescriptorHandleIncrementSize(ht);
 	}
 
 	// Create and pass back a pointer to a new root signature matching the provided description.
@@ -241,7 +240,7 @@ namespace graphics {
 
 	// Create and upload to the gpu a shader resource and create a view for it.
 	void Graphics::CreateSRV(D3D12_RESOURCE_DESC texDesc, ID3D12Resource*& tex, ID3D12Resource*& upload, D3D12_SUBRESOURCE_DATA texData,
-						     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc, D3D12_RESOURCE_STATES resourceType, ID3D12DescriptorHeap* heap) {
+						     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc, D3D12_RESOURCE_STATES resourceType, ID3D12DescriptorHeap* heap, UINT64 offset) {
 		// Create the resource heap on the gpu.
 		if (FAILED(mpDev->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT), D3D12_HEAP_FLAG_NONE, &texDesc, 
 												  D3D12_RESOURCE_STATE_COPY_DEST, NULL, IID_PPV_ARGS(&tex)))) {
@@ -258,10 +257,23 @@ namespace graphics {
 
 		// copy the data to the upload heap.
 		const unsigned int subresourceCount = texDesc.DepthOrArraySize * texDesc.MipLevels;
-		UpdateSubresources(mpCmdList, tex, upload, 0, 0, subresourceCount, &texData);
+		UpdateSubresources(mpCmdList, tex, upload, offset, 0, subresourceCount, &texData);
 		mpCmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(tex, D3D12_RESOURCE_STATE_COPY_DEST, resourceType));
-
+	
 		mpDev->CreateShaderResourceView(tex, &srvDesc, heap->GetCPUDescriptorHandleForHeapStart());
+	}
+
+	// Create a constant buffer view
+	void Graphics::CreateCBV(D3D12_CONSTANT_BUFFER_VIEW_DESC desc, D3D12_CPU_DESCRIPTOR_HANDLE handle) {
+		mpDev->CreateConstantBufferView(&desc, handle);
+	}
+
+	void Graphics::CreateBuffer(ID3D12Resource*& buffer, UINT size) {
+		if (FAILED(mpDev->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD), D3D12_HEAP_FLAG_NONE,
+												  &CD3DX12_RESOURCE_DESC::Buffer(size),
+												  D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&buffer)))) {
+			throw GFX_Exception("Failed to create buffer.");
+		}
 	}
 
 	// set the back buffer as the render target for the provided command list.
@@ -283,7 +295,7 @@ namespace graphics {
 	}
 
 	void Graphics::ResetPipeline() {
-		WaitOnBackBuffer();
+		NextFrame();
 
 		// reset command allocator and command list memory.
 		if (FAILED(maCmdAllocators[mBufferIndex]->Reset())) {
@@ -294,14 +306,41 @@ namespace graphics {
 		}
 	}
 
-	void Graphics::WaitOnBackBuffer() {
+	void Graphics::LoadAssets() {
+		// load the command list.
+		ID3D12CommandList* lCmds[] = { mpCmdList };
+
+		// execute
+		mpCmdQ->ExecuteCommandLists(__crt_countof(lCmds), lCmds);
+
+		// Add Signal command to set fence to the fence value that indicates the GPU is done with that buffer. maFenceValues[i] contains the frame count for that buffer.
+		if (FAILED(mpCmdQ->Signal(maFences[mBufferIndex], maFenceValues[mBufferIndex]))) {
+			throw GFX_Exception("CommandQueue Signal Fence failed on Render.");
+		}
+
+		// if the current value returned by the fence is less than the current fence value for this buffer, then we know the GPU is not done with the buffer, so wait.
+		if (FAILED(maFences[mBufferIndex]->SetEventOnCompletion(maFenceValues[mBufferIndex], mFenceEvent))) {
+			throw GFX_Exception("Failed to SetEventOnCompletion for fence in WaitForGPU.");
+		}
+
+		WaitForSingleObject(mFenceEvent, INFINITE);
+		
+		++maFenceValues[mBufferIndex];
+	}
+
+	void Graphics::NextFrame() {
+		// Add Signal command to set fence to the fence value that indicates the GPU is done with that buffer. maFenceValues[i] contains the frame count for that buffer.
+		if (FAILED(mpCmdQ->Signal(maFences[mBufferIndex], maFenceValues[mBufferIndex]))) {
+			throw GFX_Exception("CommandQueue Signal Fence failed on Render.");
+		}
+
 		// set the buffer index to point to the current back buffer.
 		mBufferIndex = mpSwapChain->GetCurrentBackBufferIndex();
 
 		// if the current value returned by the fence is less than the current fence value for this buffer, then we know the GPU is not done with the buffer, so wait.
 		if (maFences[mBufferIndex]->GetCompletedValue() < maFenceValues[mBufferIndex]) {
 			if (FAILED(maFences[mBufferIndex]->SetEventOnCompletion(maFenceValues[mBufferIndex], mFenceEvent))) {
-				throw GFX_Exception("Failed to SetEventOnCompletion for fence in WaitOnBackBuffer.");
+				throw GFX_Exception("Failed to SetEventOnCompletion for fence in NextFrame.");
 			}
 
 			WaitForSingleObject(mFenceEvent, INFINITE);
@@ -317,14 +356,37 @@ namespace graphics {
 		// execute
 		mpCmdQ->ExecuteCommandLists(__crt_countof(lCmds), lCmds);
 
-		// Add Signal command to set fence to the fence value that indicates the GPU is done with that buffer. maFenceValues[i] contains the frame count for that buffer.
-		if (FAILED(mpCmdQ->Signal(maFences[mBufferIndex], maFenceValues[mBufferIndex]))) {
-			throw GFX_Exception("CommandQueue Signal Fence failed on Render.");
-		}
-
 		// swap the back buffers.
 		if (FAILED(mpSwapChain->Present(0, 0))) {
 			throw GFX_Exception("SwapChain Present failed on Render.");
 		}
+	}
+
+	// Compile the specified shader.
+	void Graphics::CompileShader(LPCWSTR filename, D3D12_SHADER_BYTECODE& shaderBytecode, ShaderType st) {
+		ID3DBlob*	shader;
+		ID3DBlob*	err;
+		LPCSTR		version;
+
+		switch (st) {
+			case PIXEL_SHADER:
+				version = "ps_5_0";
+				break;
+			case VERTEX_SHADER:
+				version = "vs_5_0";
+				break;
+		}
+
+		if (FAILED(D3DCompileFromFile(filename, NULL, NULL, "main", version, D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION, 0, &shader, &err))) {
+			if (shader) shader->Release();
+			if (err) {
+				throw GFX_Exception((char *)err->GetBufferPointer());
+			}
+			else {
+				throw GFX_Exception("Failed to compile Pixel Shader. No error returned from compiler.");
+			}
+		}
+		shaderBytecode.BytecodeLength = shader->GetBufferSize();
+		shaderBytecode.pShaderBytecode = shader->GetBufferPointer();
 	}
 }
