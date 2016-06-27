@@ -2,13 +2,14 @@
 Main.cpp
 
 Author:			Chris Serson
-Last Edited:	June 21, 2016
+Last Edited:	June 26, 2016
 
 Description:	Render Terrain - Win32/DirectX 12 application.
 				Loads and displays a heightmap as a terrain.
-				Currently only displays a 2D texture view.
+				Currently only displays one of 2D or 3D view.
 
-Future Work:	- Add support for 3D rendering.
+Future Work:	- Add movement and mouse-look functionality to camera.
+				- Add ability to switch between 2D and 3D views.
 */
 #include "Window.h"
 #include "Scene.h"
@@ -20,6 +21,9 @@ using namespace window;
 static const LPCWSTR	appName = L"Directx 12 Terrain Renderer";
 static const int		WINDOW_HEIGHT = 1080;	// dimensions for the window we're making.
 static const int		WINDOW_WIDTH = 1920;
+//static const int		WINDOW_HEIGHT = 2160;	// dimensions for the window we're making.
+//static const int		WINDOW_WIDTH = 3840;
+
 static const bool		FULL_SCREEN = false;
 
 static void KeyUp(UINT key) {

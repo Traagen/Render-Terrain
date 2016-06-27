@@ -1,0 +1,18 @@
+no shading, no texturing, matte colour
+512x512 	@ 1080p = 2000+ fps,  0.4ms,   44.5MB CPU,  44MB GPU
+512x512 	@    4k	= 2000+ fps,  0.6ms,   44.5MB CPU, 137MB GPU
+1024x1024 	@ 1080p	= 1000+ fps,  0.9ms,   98.8MB CPU,  61MB GPU
+1024x1024	@	 4k =  718.5fps,  1.4ms,   98.6MB CPU, 155MB GPU
+2048x2048	@ 1080p =  435.8fps,  2.3ms,  314.8MB CPU, 133MB GPU
+2048x2048	@	 4k =  300.2fps,  3.3ms,  314.8MB CPU, 228MB GPU
+4096x4096	@ 1080p =  104.8fps,  9.6ms, 1200.0MB CPU, 420MB GPU
+4096x4096	@	 4k =  103.4fps,  9.6ms, 1200.0MB CPU, 514MB GPU
+no shading, 1 texture (reuse heightmap)
+512x512 	@ 1080p = 2000+ fps,  0.5ms,   44.5MB CPU,  44MB GPU
+512x512 	@    4k	= 1000+ fps,  0.7ms,   44.5MB CPU, 137MB GPU
+1024x1024 	@ 1080p	= 1000+ fps,  0.9ms,   98.8MB CPU,  61MB GPU
+1024x1024	@	 4k =  713.4fps.  1.4ms,   98.6MB CPU, 155MB GPU
+2048x2048	@ 1080p =  418.8fps,  2.4ms.  314.8MB CPU, 133MB GPU
+2048x2048	@	 4k =  300.4fps,  3.3ms,  314.8MB CPU, 228MB GPU
+4096x4096	@ 1080p =  104.2fps,  9.6ms, 1200.0MB CPU, 420MB GPU
+4096x4096	@	 4k =   95.0fps, 10.5ms, 1200.0MB CPU, 514MB GPU

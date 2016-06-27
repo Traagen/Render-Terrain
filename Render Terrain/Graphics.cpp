@@ -2,7 +2,7 @@
 Graphics.cpp
 
 Author:			Chris Serson
-Last Edited:	June 23, 2016
+Last Edited:	June 26, 2016
 
 Description:	Class for creating and managing a Direct3D 12 instance.
 */
@@ -89,7 +89,7 @@ namespace graphics {
 		swapChainDesc.OutputWindow = win;
 		swapChainDesc.Windowed = !fullscreen;
 		swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-		swapChainDesc.SampleDesc = sampleDesc; 
+		swapChainDesc.SampleDesc = sampleDesc;
 
 		// create temporary swapchain.
 		if (FAILED(factory->CreateSwapChain(mpCmdQ, &swapChainDesc, &swapChain))) {
@@ -205,7 +205,7 @@ namespace graphics {
 			mpDev = nullptr;
 		}
 	}
-	
+
 	UINT Graphics::GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE ht) {
 		return mpDev->GetDescriptorHandleIncrementSize(ht);
 	}
@@ -240,18 +240,18 @@ namespace graphics {
 
 	// Create and upload to the gpu a shader resource and create a view for it.
 	void Graphics::CreateSRV(D3D12_RESOURCE_DESC texDesc, ID3D12Resource*& tex, ID3D12Resource*& upload, D3D12_SUBRESOURCE_DATA texData,
-						     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc, D3D12_RESOURCE_STATES resourceType, ID3D12DescriptorHeap* heap, UINT64 offset) {
+		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc, D3D12_RESOURCE_STATES resourceType, ID3D12DescriptorHeap* heap, UINT64 offset) {
 		// Create the resource heap on the gpu.
-		if (FAILED(mpDev->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT), D3D12_HEAP_FLAG_NONE, &texDesc, 
-												  D3D12_RESOURCE_STATE_COPY_DEST, NULL, IID_PPV_ARGS(&tex)))) {
+		if (FAILED(mpDev->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT), D3D12_HEAP_FLAG_NONE, &texDesc,
+			D3D12_RESOURCE_STATE_COPY_DEST, NULL, IID_PPV_ARGS(&tex)))) {
 			throw GFX_Exception("Failed to create default heap on CreateSRV.");
 		}
 
 		// Create an upload heap.
 		const auto buffSize = GetRequiredIntermediateSize(tex, 0, 1);
-		if (FAILED(mpDev->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD), D3D12_HEAP_FLAG_NONE, 
-												  &CD3DX12_RESOURCE_DESC::Buffer(buffSize), D3D12_RESOURCE_STATE_GENERIC_READ, 
-												  NULL, IID_PPV_ARGS(&upload)))) {
+		if (FAILED(mpDev->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD), D3D12_HEAP_FLAG_NONE,
+			&CD3DX12_RESOURCE_DESC::Buffer(buffSize), D3D12_RESOURCE_STATE_GENERIC_READ,
+			NULL, IID_PPV_ARGS(&upload)))) {
 			throw GFX_Exception("Failed to create upload heap on CreateSRV.");
 		}
 
@@ -259,7 +259,7 @@ namespace graphics {
 		const unsigned int subresourceCount = texDesc.DepthOrArraySize * texDesc.MipLevels;
 		UpdateSubresources(mpCmdList, tex, upload, offset, 0, subresourceCount, &texData);
 		mpCmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(tex, D3D12_RESOURCE_STATE_COPY_DEST, resourceType));
-	
+
 		mpDev->CreateShaderResourceView(tex, &srvDesc, heap->GetCPUDescriptorHandleForHeapStart());
 	}
 
@@ -270,11 +270,27 @@ namespace graphics {
 
 	void Graphics::CreateBuffer(ID3D12Resource*& buffer, UINT size) {
 		if (FAILED(mpDev->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD), D3D12_HEAP_FLAG_NONE,
-												  &CD3DX12_RESOURCE_DESC::Buffer(size),
-												  D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&buffer)))) {
+			&CD3DX12_RESOURCE_DESC::Buffer(size),
+			D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&buffer)))) {
 			throw GFX_Exception("Failed to create buffer.");
 		}
 	}
+
+	// Create a committed default buffer and an upload buffer for copying data to it.
+	void Graphics::CreateCommittedBuffer(ID3D12Resource*& buffer, ID3D12Resource*&upload, int size) {
+		// create default buffer heap
+		if (FAILED(mpDev->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT), D3D12_HEAP_FLAG_NONE,
+			&CD3DX12_RESOURCE_DESC::Buffer(size), D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&buffer)))) {
+			throw GFX_Exception("Failed to create default buffer heap.");
+		}
+
+		// create upload heap
+		if (FAILED(mpDev->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD), D3D12_HEAP_FLAG_NONE,
+			&CD3DX12_RESOURCE_DESC::Buffer(size), D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&upload)))) {
+			throw GFX_Exception("Failed to create upload buffer heap.");
+		}
+	}
+
 
 	// set the back buffer as the render target for the provided command list.
 	void Graphics::SetBackBufferRender(ID3D12GraphicsCommandList* cmdList, const float clearColor[4]) {
@@ -347,6 +363,25 @@ namespace graphics {
 		}
 
 		++maFenceValues[mBufferIndex];
+	}
+
+	// Function to be called before shutting down. Ensures GPU is done rendering all frames so we can release graphics resources.
+	void Graphics::ClearAllFrames() {
+		for (int i = 0; i < FRAME_BUFFER_COUNT; ++i) {
+			// Add Signal command to set fence to the fence value that indicates the GPU is done with that buffer. maFenceValues[i] contains the frame count for that buffer.
+			if (FAILED(mpCmdQ->Signal(maFences[i], maFenceValues[i]))) {
+				throw GFX_Exception("CommandQueue Signal Fence failed on Render.");
+			}
+
+			// if the current value returned by the fence is less than the current fence value for this buffer, then we know the GPU is not done with the buffer, so wait.
+			if (maFences[i]->GetCompletedValue() < maFenceValues[i]) {
+				if (FAILED(maFences[i]->SetEventOnCompletion(maFenceValues[i], mFenceEvent))) {
+					throw GFX_Exception("Failed to SetEventOnCompletion for fence in NextFrame.");
+				}
+
+				WaitForSingleObject(mFenceEvent, INFINITE);
+			}
+		}
 	}
 
 	void Graphics::Render() {

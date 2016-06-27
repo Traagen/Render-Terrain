@@ -2,10 +2,9 @@
 Terrain.h
 
 Author:			Chris Serson
-Last Edited:	June 23, 2016
+Last Edited:	June 26, 2016
 
 Description:	Class for loading a heightmap and rendering as a terrain.
-				Currently renders only as 2D texture view.
 
 Usage:			- Calling the constructor, either through Terrain T(...);
 				or Terrain* T; T = new Terrain(...);, will load the
@@ -16,11 +15,9 @@ Usage:			- Calling the constructor, either through Terrain T(...);
 				- Call Draw() and pass a Command List to load the set of
 				commands necessary to render the terrain.
 
-Future Work:	- Add support for 3D rendering.
-				- Add a colour palette.
+Future Work:	- Add a colour palette.
 				- Add support for texturing.
 				- Add tessellation support.
-
 */
 #pragma once
 
@@ -33,6 +30,10 @@ struct ConstantBuffer {
 	XMFLOAT4X4	viewproj;
 	int			height;
 	int			width;
+};
+
+struct Vertex {
+	XMFLOAT3 position;
 };
 
 class Terrain {
@@ -50,6 +51,8 @@ private:
 	void PreparePipeline2D(Graphics *GFX);
 	// prepare RootSig, PSO, Shaders, and Descriptor heaps for 3D render
 	void PreparePipeline3D(Graphics *GFX);
+	// generate vertex and index buffers for 3D mesh of terrain
+	void CreateMesh3D(Graphics *GFX);
 	// load the specified file containing the heightmap data.
 	void LoadHeightMap(const char* filename);
 	// loads the heightmap texture into memory
@@ -57,20 +60,27 @@ private:
 	// create a constant buffer to contain shader values
 	void CreateConstantBuffer(Graphics *GFX);
 	
-	ID3D12PipelineState*	mpPSO2D;
-	ID3D12PipelineState*	mpPSO3D;
-	ID3D12RootSignature*	mpRootSig2D;
-	ID3D12RootSignature*	mpRootSig3D;
-	ID3D12DescriptorHeap*	mpSRVHeap;			// Shader Resource View Heap
-	ID3D12Resource*			mpHeightmap;
-	ID3D12Resource*			mpUpload;			// upload buffer for the heightmap.
-	ID3D12Resource*			mpCBV;	
-	unsigned char*			maImage;
-	unsigned int			mWidth;
-	unsigned int			mHeight;
-	XMFLOAT4X4				mmViewProjTrans;	// combined view/projection matrix. Assumed to already be transposed
-	ConstantBuffer			mCBData;
-	UINT8*					mpCBVDataBegin;		// memory mapped to CBV
-	UINT					mSRVDescSize;
+	ID3D12PipelineState*		mpPSO2D;
+	ID3D12PipelineState*		mpPSO3D;
+	ID3D12RootSignature*		mpRootSig2D;
+	ID3D12RootSignature*		mpRootSig3D;
+	ID3D12DescriptorHeap*		mpSRVHeap;			// Shader Resource View Heap
+	ID3D12Resource*				mpHeightmap;
+	ID3D12Resource*				mpUploadHeightmap;			// upload buffer for the heightmap.
+	ID3D12Resource*				mpCBV;	
+	ID3D12Resource*				mpVertexBuffer;
+	ID3D12Resource*				mpUploadVB;
+	ID3D12Resource*				mpIndexBuffer;
+	ID3D12Resource*				mpUploadIB;
+	D3D12_VERTEX_BUFFER_VIEW	mVBV;
+	D3D12_INDEX_BUFFER_VIEW		mIBV;
+	unsigned char*				maImage;
+	unsigned int				mWidth;
+	unsigned int				mHeight;
+	unsigned int				mIndexCount;
+	XMFLOAT4X4					mmViewProjTrans;	// combined view/projection matrix. Assumed to already be transposed
+	ConstantBuffer				mCBData;
+	UINT8*						mpCBVDataBegin;		// memory mapped to CBV
+	UINT						mSRVDescSize;
 };
 

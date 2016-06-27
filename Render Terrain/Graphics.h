@@ -2,7 +2,7 @@
 Graphics.h
 
 Author:			Chris Serson
-Last Edited:	June 23, 2016
+Last Edited:	June 26, 2016
 
 Description:	Class for creating and managing a Direct3D 12 instance.
 
@@ -87,10 +87,14 @@ namespace graphics {
 		// Create a constant buffer view
 		void CreateCBV(D3D12_CONSTANT_BUFFER_VIEW_DESC desc, D3D12_CPU_DESCRIPTOR_HANDLE handle);
 		void CreateBuffer(ID3D12Resource*& buffer, UINT size);
+		// Create a committed default buffer and an upload buffer for copying data to it.
+		void CreateCommittedBuffer(ID3D12Resource*& buffer, ID3D12Resource*&upload, int size);
 		// Compile the specified shader.
 		void CompileShader(LPCWSTR filename, D3D12_SHADER_BYTECODE& shaderBytecode, ShaderType st);
 		// Waits for and confirms that the GPU is done running any commands on the current back buffer.
 		void LoadAssets();
+		// Function to be called before shutting down. Ensures GPU is done rendering all frames so we can release graphics resources.
+		void ClearAllFrames();
 
 	private:
 		void NextFrame();

@@ -2,7 +2,7 @@
 Scene.h
 
 Author:			Chris Serson
-Last Edited:	June 23, 2016
+Last Edited:	June 26, 2016
 
 Description:	Class for creating, managing, and rendering a scene.
 
@@ -13,8 +13,11 @@ Usage:			- Calling the constructor, either through Scene S(...);
 				- Requires a pointer to a Graphics object be passed in.
 				- Is hard-coded for Direct3D 12.
 				- Call Draw() in the main loop to render the scene.
+				- Currently can only draw terrain in 2D or 3D depending on hard-coded choice.
 				
 Future Work:	- Add support for multi-threaded rendering.
+				- Add camera move and mouse-look support.
+				- Add ability to swap between 2D and 3D.
 */
 #pragma once
 

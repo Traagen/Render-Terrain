@@ -2,7 +2,7 @@
 Camera.h
 
 Author:			Chris Serson
-Last Edited:	June 23, 2016
+Last Edited:	June 26, 2016
 
 Description:	Class for creating and controlling the camera
 

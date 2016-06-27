@@ -2,7 +2,7 @@
 Scene.cpp
 
 Author:			Chris Serson
-Last Edited:	June 23, 2016
+Last Edited:	June 26, 2016
 
 Description:	Class for creating, managing, and rendering a scene.
 */
@@ -32,6 +32,7 @@ Scene::Scene(int height, int width, Graphics* GFX) : T(GFX), C(height, width) {
 
 
 Scene::~Scene() {
+	mpGFX->ClearAllFrames();
 	mpGFX = nullptr;
 }
 
@@ -53,7 +54,7 @@ void Scene::Draw() {
 	mpGFX->ResetPipeline();
 
 	// set a clear color.
-	const float clearColor[] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	const float clearColor[] = { 0.2f, 0.6f, 1.0f, 1.0f };
 	mpGFX->SetBackBufferRender(mpGFX->GetCommandList(), clearColor);
 
 	SetViewport();

@@ -8,4 +8,5 @@ struct VS_OUTPUT {
 
 float4 main(VS_OUTPUT input) : SV_TARGET {
 	return heightmap.Sample(hmsampler, input.tex);
+
 }
