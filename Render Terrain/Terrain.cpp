@@ -2,7 +2,7 @@
 Terrain.cpp
 
 Author:			Chris Serson
-Last Edited:	June 26, 2016
+Last Edited:	July 2, 2016
 
 Description:	Class for loading a heightmap and rendering as a terrain.
 */
@@ -10,6 +10,7 @@ Description:	Class for loading a heightmap and rendering as a terrain.
 #include "Terrain.h"
 
 Terrain::Terrain(Graphics* GFX) {
+	D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
 	mpPSO2D = nullptr;
 	mpPSO3D = nullptr;
 	mpRootSig2D = nullptr;
@@ -24,9 +25,19 @@ Terrain::Terrain(Graphics* GFX) {
 	mpCBV = nullptr;
 	maImage = nullptr;
 
+	// create the SRV heap that points at the heightmap and CBV.
+	srvHeapDesc.NumDescriptors = 2;
+	srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+	srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+	GFX->CreateDescriptorHeap(&srvHeapDesc, mpSRVHeap);
+	mpSRVHeap->SetName(L"CBV/SRV Heap");
+
+	mSRVDescSize = GFX->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+	PrepareHeightmap(GFX); // the heightmap is used across 2D and 3D.
 	PreparePipeline2D(GFX);
 	PreparePipeline3D(GFX);
-//	PrepareHeightmap(GFX); // the heightmap is used across 2D and 3D.
+	
 }
 
 Terrain::~Terrain() {
@@ -107,12 +118,12 @@ void Terrain::Draw2D(ID3D12GraphicsCommandList* cmdList) {
 	cmdList->DrawInstanced(3, 1, 0, 0);
 }
 
-void Terrain::Draw3D(ID3D12GraphicsCommandList* cmdList) {
+void Terrain::Draw3D(ID3D12GraphicsCommandList* cmdList, XMFLOAT4X4 vp, XMFLOAT4 eye) {
 	cmdList->SetPipelineState(mpPSO3D);
 	cmdList->SetGraphicsRootSignature(mpRootSig3D);
 
-
-	mCBData.viewproj = mmViewProjTrans;
+	mCBData.viewproj = vp;
+	mCBData.eye = eye;
 	mCBData.height = mHeight;
 	mCBData.width = mWidth;
 	memcpy(mpCBVDataBegin, &mCBData, sizeof(mCBData));
@@ -130,6 +141,22 @@ void Terrain::Draw3D(ID3D12GraphicsCommandList* cmdList) {
 	cmdList->DrawIndexedInstanced(mIndexCount, 1, 0, 0, 0);
 }
 
+// Once the GPU has completed uploading buffers to GPU memory, we need to free system memory.
+void Terrain::ClearUnusedUploadBuffersAfterInit() {
+	if (mpUploadHeightmap) {
+		mpUploadHeightmap->Release();
+		mpUploadHeightmap = nullptr;
+	}
+	if (mpUploadIB) {
+		mpUploadIB->Release();
+		mpUploadIB = nullptr;
+	}
+	if (mpUploadVB) {
+		mpUploadVB->Release();
+		mpUploadVB = nullptr;
+	}
+}
+
 // prepare RootSig, PSO, Shaders, and Descriptor heaps for 2D render
 void Terrain::PreparePipeline2D(Graphics *GFX) {
 	CD3DX12_ROOT_SIGNATURE_DESC			rootDesc;
@@ -140,14 +167,6 @@ void Terrain::PreparePipeline2D(Graphics *GFX) {
 	DXGI_SAMPLE_DESC					sampleDesc = {};
 	D3D12_SHADER_BYTECODE				PSBytecode = {};
 	D3D12_SHADER_BYTECODE				VSBytecode = {};
-	D3D12_DESCRIPTOR_HEAP_DESC			srvHeapDesc = {};
-
-	// create the SRV heap that points at the heightmap.
-	srvHeapDesc.NumDescriptors = 1;
-	srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-	srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-	GFX->CreateDescriptorHeap(srvHeapDesc, mpSRVHeap);
-	mpSRVHeap->SetName(L"SRV Heap");
 
 	// set up the Root Signature.
 	// create a descriptor table with 1 entry for the descriptor heap containing our SRV to the heightmap.
@@ -162,7 +181,7 @@ void Terrain::PreparePipeline2D(Graphics *GFX) {
 												  D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
 												  D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
 												  D3D12_ROOT_SIGNATURE_FLAG_DENY_VERTEX_SHADER_ROOT_ACCESS);
-	GFX->CreateRootSig(rootDesc, mpRootSig2D);
+	GFX->CreateRootSig(&rootDesc, mpRootSig2D);
 
 	GFX->CompileShader(L"RenderTerrain2dVS.hlsl", VSBytecode, VERTEX_SHADER);
 	GFX->CompileShader(L"RenderTerrain2dPS.hlsl", PSBytecode, PIXEL_SHADER);
@@ -184,7 +203,7 @@ void Terrain::PreparePipeline2D(Graphics *GFX) {
 	psoDesc.DepthStencilState.DepthEnable = false;
 	psoDesc.DepthStencilState.StencilEnable = false;
 
-	GFX->CreatePSO(psoDesc, mpPSO2D);
+	GFX->CreatePSO(&psoDesc, mpPSO2D);
 }
 
 // prepare RootSig, PSO, Shaders, and Descriptor heaps for 3D render
@@ -197,17 +216,7 @@ void Terrain::PreparePipeline3D(Graphics *GFX) {
 	DXGI_SAMPLE_DESC					sampleDesc = {};
 	D3D12_SHADER_BYTECODE				PSBytecode = {};
 	D3D12_SHADER_BYTECODE				VSBytecode = {};
-	D3D12_DESCRIPTOR_HEAP_DESC			srvHeapDesc = {};
 	D3D12_INPUT_LAYOUT_DESC				inputLayoutDesc = {};
-
-	// create the SRV heap that points at the heightmap and CBV.
-	srvHeapDesc.NumDescriptors = 2;
-	srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-	srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-	GFX->CreateDescriptorHeap(srvHeapDesc, mpSRVHeap);
-	mpSRVHeap->SetName(L"CBV/SRV Heap");
-
-	mSRVDescSize = GFX->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
 	// set up the Root Signature.
 	// create a descriptor table with 2 entries for the descriptor heap containing our SRV to the heightmap and our CBV.
@@ -216,8 +225,8 @@ void Terrain::PreparePipeline3D(Graphics *GFX) {
 
 	// create a root parameter for our cbv
 	ranges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0);
-	paramsRoot[1].InitAsDescriptorTable(1, &ranges[1], D3D12_SHADER_VISIBILITY_VERTEX);
-
+	paramsRoot[1].InitAsDescriptorTable(1, &ranges[1], D3D12_SHADER_VISIBILITY_ALL);
+	
 	// create our texture sampler for the heightmap.
 	descSamplers[0].Init(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
 	
@@ -226,7 +235,7 @@ void Terrain::PreparePipeline3D(Graphics *GFX) {
 																	 D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
 																	 D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
 																	 D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
-	GFX->CreateRootSig(rootDesc, mpRootSig3D);
+	GFX->CreateRootSig(&rootDesc, mpRootSig3D);
 
 	CreateConstantBuffer(GFX);
 
@@ -234,8 +243,8 @@ void Terrain::PreparePipeline3D(Graphics *GFX) {
 	GFX->CompileShader(L"RenderTerrain3dPS.hlsl", PSBytecode, PIXEL_SHADER);
 
 	sampleDesc.Count = 1; // turns multi-sampling off. Not supported feature for my card.
-						  // create the pipeline state object
-
+	
+	// create the pipeline state object
 	// create input layout.
 	D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
 		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
@@ -256,12 +265,9 @@ void Terrain::PreparePipeline3D(Graphics *GFX) {
 	psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
 	psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
 	psoDesc.NumRenderTargets = 1;
-	psoDesc.DepthStencilState.DepthEnable = false;
-	psoDesc.DepthStencilState.StencilEnable = false;
+	psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+	GFX->CreatePSO(&psoDesc, mpPSO3D);
 
-	GFX->CreatePSO(psoDesc, mpPSO3D);
-
-	PrepareHeightmap(GFX);
 	CreateMesh3D(GFX);
 }
 
@@ -270,18 +276,19 @@ void Terrain::CreateConstantBuffer(Graphics *GFX) {
 	D3D12_DESCRIPTOR_HEAP_DESC		heapDesc = {};
 	D3D12_CONSTANT_BUFFER_VIEW_DESC	cbvDesc = {};
 	CD3DX12_RANGE					readRange(0, 0); // we won't be reading from this resource
+	UINT64							buffSize = sizeof(ConstantBuffer);
 
 	// Create an upload buffer for the CBV
-	GFX->CreateBuffer(mpCBV, sizeof(ConstantBuffer));
+	GFX->CreateBuffer(mpCBV, &CD3DX12_RESOURCE_DESC::Buffer(buffSize));
 	mpCBV->SetName(L"CBV");
 
 	// Create the CBV itself
 	cbvDesc.BufferLocation = mpCBV->GetGPUVirtualAddress();
-	cbvDesc.SizeInBytes = (sizeof(ConstantBuffer) + 255) & ~255; // CB size is required to be 256-byte aligned.
+	cbvDesc.SizeInBytes = (buffSize + 255) & ~255; // CB size is required to be 256-byte aligned.
 
 	CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(mpSRVHeap->GetCPUDescriptorHandleForHeapStart(), 1, mSRVDescSize);
 
-	GFX->CreateCBV(cbvDesc, srvHandle);
+	GFX->CreateCBV(&cbvDesc, srvHandle);
 
 	// initialize and map the constant buffers.
 	// per the DirectX 12 sample code, we can leave this mapped until we close.
@@ -300,19 +307,20 @@ void Terrain::CreateMesh3D(Graphics *GFX) {
 
 	int height = mHeight;
 	int width = mWidth;
+
 	// Create a vertex buffer
 	int arrSize = height * width;
 
 	Vertex *vertices = new Vertex[arrSize];
 	for (int y = 0; y < height; ++y) {
 		for (int x = 0; x < width; ++x) {
-			vertices[y * width + x].position = XMFLOAT3(x, y, 0.0f);
+			vertices[y * width + x].position = XMFLOAT3((float)x, (float)y, 0.0f);
 		}
 	}
 	
 	int buffSize = sizeof(Vertex) * arrSize;
 
-	GFX->CreateCommittedBuffer(mpVertexBuffer, mpUploadVB, buffSize);
+	GFX->CreateCommittedBuffer(mpVertexBuffer, mpUploadVB, &CD3DX12_RESOURCE_DESC::Buffer(buffSize));
 	mpVertexBuffer->SetName(L"Vertex buffer heap");
 	mpUploadVB->SetName(L"Vertex buffer upload heap");
 
@@ -359,7 +367,7 @@ void Terrain::CreateMesh3D(Graphics *GFX) {
 
 	buffSize = sizeof(UINT) * arrSize;
 	
-	GFX->CreateCommittedBuffer(mpIndexBuffer, mpUploadIB, buffSize);
+	GFX->CreateCommittedBuffer(mpIndexBuffer, mpUploadIB, &CD3DX12_RESOURCE_DESC::Buffer(buffSize));
 	mpIndexBuffer->SetName(L"Index buffer heap");
 	mpUploadIB->SetName(L"Index buffer upload heap");
 
@@ -383,7 +391,7 @@ void Terrain::PrepareHeightmap(Graphics *GFX) {
 	D3D12_SUBRESOURCE_DATA				texData = {};
 	D3D12_SHADER_RESOURCE_VIEW_DESC		srvDesc = {};
 
-	LoadHeightMap("heightmap7.png");
+	LoadHeightMap("heightmap5.png");
 
 	// create the texture.
 	texDesc.MipLevels = 1;
@@ -406,7 +414,15 @@ void Terrain::PrepareHeightmap(Graphics *GFX) {
 	texData.RowPitch = mWidth * 4;
 	texData.SlicePitch = mHeight * mWidth * 4;
 	
-	GFX->CreateSRV(texDesc, mpHeightmap, mpUploadHeightmap, texData, srvDesc, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, mpSRVHeap, 0);
+	GFX->CreateCommittedBuffer(mpHeightmap, mpUploadHeightmap, &texDesc);
+	// copy the data to the upload heap.
+	const unsigned int subresourceCount = texDesc.DepthOrArraySize * texDesc.MipLevels;
+	
+	ID3D12GraphicsCommandList *cmdList = GFX->GetCommandList();
+	UpdateSubresources(cmdList, mpHeightmap, mpUploadHeightmap, 0, 0, subresourceCount, &texData);
+	cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(mpHeightmap, D3D12_RESOURCE_STATE_COPY_DEST, 
+							 D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
+	GFX->CreateSRV(mpHeightmap, &srvDesc, mpSRVHeap);
 	mpHeightmap->SetName(L"Heightmap Resource Heap");
 	mpUploadHeightmap->SetName(L"Heightmap Upload Resource Heap");
 }

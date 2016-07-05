@@ -2,7 +2,7 @@
 Graphics.h
 
 Author:			Chris Serson
-Last Edited:	June 26, 2016
+Last Edited:	July 2, 2016
 
 Description:	Class for creating and managing a Direct3D 12 instance.
 
@@ -20,8 +20,7 @@ Usage:			- Calling the constructor, either through Graphics GFX(...);
 				when to swap the buffers (SetBackBufferRender(), SetBackBufferPresent(), 
 				and when to actually execute the command list (Render()).
 
-Future Work:	- Add support for Depth/Stencil buffers.
-				- Add support for multi-threaded graphics applications.
+Future Work:	- Add support for multi-threaded graphics applications.
 				- Clean up constructor code. Can be broken up into smaller
 				functions to make more readable.
 				- Needs to be more generic, with less hard-coded values.
@@ -76,19 +75,19 @@ namespace graphics {
 		UINT GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE ht);
 
 		// Create and return a pointer to a new root signature matching the provided description.
-		void CreateRootSig(CD3DX12_ROOT_SIGNATURE_DESC rootDesc, ID3D12RootSignature*& rootSig);
+		void CreateRootSig(CD3DX12_ROOT_SIGNATURE_DESC* rootDesc, ID3D12RootSignature*& rootSig);
 		// Create and return a pointer to a new Pipeline State Object matching the provided description.
-		void CreatePSO(D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc, ID3D12PipelineState*& PSO);
+		void CreatePSO(D3D12_GRAPHICS_PIPELINE_STATE_DESC* psoDesc, ID3D12PipelineState*& PSO);
 		// Create and return a pointer to a Descriptor Heap.
-		void CreateDescriptorHeap(D3D12_DESCRIPTOR_HEAP_DESC heapDesc, ID3D12DescriptorHeap*& heap);
-		// Create and upload to the gpu a shader resource and create a view for it.
-		void CreateSRV(D3D12_RESOURCE_DESC texDesc, ID3D12Resource*& tex, ID3D12Resource*& upload, D3D12_SUBRESOURCE_DATA texData, 
-					   D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc, D3D12_RESOURCE_STATES resourceType, ID3D12DescriptorHeap* heap, UINT64 offset);
+		void CreateDescriptorHeap(D3D12_DESCRIPTOR_HEAP_DESC* heapDesc, ID3D12DescriptorHeap*& heap);
+		// Create a Shader Resource view for the supplied resource.
+		void CreateSRV(ID3D12Resource*& tex, D3D12_SHADER_RESOURCE_VIEW_DESC* srvDesc, ID3D12DescriptorHeap* heap);
 		// Create a constant buffer view
-		void CreateCBV(D3D12_CONSTANT_BUFFER_VIEW_DESC desc, D3D12_CPU_DESCRIPTOR_HANDLE handle);
-		void CreateBuffer(ID3D12Resource*& buffer, UINT size);
+		void CreateCBV(D3D12_CONSTANT_BUFFER_VIEW_DESC* desc, D3D12_CPU_DESCRIPTOR_HANDLE handle);
+		void CreateBuffer(ID3D12Resource*& buffer, D3D12_RESOURCE_DESC* texDesc);
 		// Create a committed default buffer and an upload buffer for copying data to it.
-		void CreateCommittedBuffer(ID3D12Resource*& buffer, ID3D12Resource*&upload, int size);
+		void CreateCommittedBuffer(ID3D12Resource*& buffer, ID3D12Resource*& upload, D3D12_RESOURCE_DESC* texDesc);
+		
 		// Compile the specified shader.
 		void CompileShader(LPCWSTR filename, D3D12_SHADER_BYTECODE& shaderBytecode, ShaderType st);
 		// Waits for and confirms that the GPU is done running any commands on the current back buffer.
@@ -105,7 +104,9 @@ namespace graphics {
 		ID3D12GraphicsCommandList*	mpCmdList;
 		IDXGISwapChain3*			mpSwapChain;
 		ID3D12DescriptorHeap*		mpRTVHeap; // Render Target View Heap
+		ID3D12DescriptorHeap*		mpDSVHeap; // Depth Stencil View Heap
 		ID3D12Resource*				maBackBuffers[FRAME_BUFFER_COUNT];
+		ID3D12Resource*				mpDepthStencilBuffer;
 		ID3D12Fence*				maFences[FRAME_BUFFER_COUNT];
 		HANDLE						mFenceEvent;
 		unsigned long long			maFenceValues[FRAME_BUFFER_COUNT];

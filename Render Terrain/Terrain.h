@@ -2,7 +2,7 @@
 Terrain.h
 
 Author:			Chris Serson
-Last Edited:	June 26, 2016
+Last Edited:	July 1, 2016
 
 Description:	Class for loading a heightmap and rendering as a terrain.
 
@@ -18,6 +18,7 @@ Usage:			- Calling the constructor, either through Terrain T(...);
 Future Work:	- Add a colour palette.
 				- Add support for texturing.
 				- Add tessellation support.
+				- Add shadowing.
 */
 #pragma once
 
@@ -28,6 +29,7 @@ using namespace graphics;
 
 struct ConstantBuffer {
 	XMFLOAT4X4	viewproj;
+	XMFLOAT4	eye;
 	int			height;
 	int			width;
 };
@@ -42,9 +44,10 @@ public:
 	~Terrain();
 
 	void Draw2D(ID3D12GraphicsCommandList* cmdList);
-	void Draw3D(ID3D12GraphicsCommandList* cmdList);
+	void Draw3D(ID3D12GraphicsCommandList* cmdList, XMFLOAT4X4 vp, XMFLOAT4 eye);
 
-	void SetViewProjectionMatrixTransposed(XMFLOAT4X4 vp) { mmViewProjTrans = vp; }
+	// Once the GPU has completed uploading buffers to GPU memory, we need to free system memory.
+	void ClearUnusedUploadBuffersAfterInit();
 
 private:
 	// prepare RootSig, PSO, Shaders, and Descriptor heaps for 2D render
@@ -78,7 +81,6 @@ private:
 	unsigned int				mWidth;
 	unsigned int				mHeight;
 	unsigned int				mIndexCount;
-	XMFLOAT4X4					mmViewProjTrans;	// combined view/projection matrix. Assumed to already be transposed
 	ConstantBuffer				mCBData;
 	UINT8*						mpCBVDataBegin;		// memory mapped to CBV
 	UINT						mSRVDescSize;
