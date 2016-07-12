@@ -48,7 +48,7 @@ namespace graphics {
 	static const int FRAME_BUFFER_COUNT = 3; // triple buffering.
 	static const D3D_FEATURE_LEVEL	FEATURE_LEVEL = D3D_FEATURE_LEVEL_11_0; // minimum feature level necessary for DirectX 12 compatibility.
 																			// this is all my current card supports.
-	enum ShaderType { PIXEL_SHADER, VERTEX_SHADER };
+	enum ShaderType { PIXEL_SHADER, VERTEX_SHADER, GEOMETRY_SHADER, HULL_SHADER, DOMAIN_SHADER };
 
 	class GFX_Exception : public std::runtime_error {
 	public:

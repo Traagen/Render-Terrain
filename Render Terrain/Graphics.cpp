@@ -440,6 +440,17 @@ namespace graphics {
 			case VERTEX_SHADER:
 				version = "vs_5_0";
 				break;
+			case GEOMETRY_SHADER:
+				version = "gs_5_0";
+				break;
+			case HULL_SHADER:
+				version = "hs_5_0";
+					break;
+			case DOMAIN_SHADER:
+				version = "ds_5_0";
+				break;
+			default:
+				version = ""; // will break on attempting to compile as not valid.
 		}
 
 		if (FAILED(D3DCompileFromFile(filename, NULL, NULL, "main", version, D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION, 0, &shader, &err))) {

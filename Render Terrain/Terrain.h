@@ -2,7 +2,7 @@
 Terrain.h
 
 Author:			Chris Serson
-Last Edited:	July 1, 2016
+Last Edited:	July 6, 2016
 
 Description:	Class for loading a heightmap and rendering as a terrain.
 
@@ -45,6 +45,7 @@ public:
 
 	void Draw2D(ID3D12GraphicsCommandList* cmdList);
 	void Draw3D(ID3D12GraphicsCommandList* cmdList, XMFLOAT4X4 vp, XMFLOAT4 eye);
+	void DrawTess(ID3D12GraphicsCommandList* cmdList, XMFLOAT4X4 vp, XMFLOAT4 eye);
 
 	// Once the GPU has completed uploading buffers to GPU memory, we need to free system memory.
 	void ClearUnusedUploadBuffersAfterInit();
@@ -54,6 +55,8 @@ private:
 	void PreparePipeline2D(Graphics *GFX);
 	// prepare RootSig, PSO, Shaders, and Descriptor heaps for 3D render
 	void PreparePipeline3D(Graphics *GFX);
+	// prepare RootSig, PSO, and Shaders for render with tessellation. Uses same heaps as 3D.
+	void PreparePipelineTess(Graphics *GFX);
 	// generate vertex and index buffers for 3D mesh of terrain
 	void CreateMesh3D(Graphics *GFX);
 	// load the specified file containing the heightmap data.
@@ -65,8 +68,10 @@ private:
 	
 	ID3D12PipelineState*		mpPSO2D;
 	ID3D12PipelineState*		mpPSO3D;
+	ID3D12PipelineState*		mpPSOTes;
 	ID3D12RootSignature*		mpRootSig2D;
 	ID3D12RootSignature*		mpRootSig3D;
+	ID3D12RootSignature*		mpRootSigTes;
 	ID3D12DescriptorHeap*		mpSRVHeap;			// Shader Resource View Heap
 	ID3D12Resource*				mpHeightmap;
 	ID3D12Resource*				mpUploadHeightmap;			// upload buffer for the heightmap.

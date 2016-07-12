@@ -2,7 +2,7 @@
 Main.cpp
 
 Author:			Chris Serson
-Last Edited:	July 2, 2016
+Last Edited:	July 6, 2016
 
 Description:	Render Terrain - Win32/DirectX 12 application.
 				Loads and displays a heightmap as a terrain.
@@ -43,7 +43,9 @@ static void KeyDown(UINT key) {
 		case _D:
 		case _Q:
 		case _Z:
-		case _T:
+		case _1:
+		case _2:
+		case _3:
 			pScene->HandleKeyboardInput(key);
 			break;
 	}

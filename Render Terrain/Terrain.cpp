@@ -2,7 +2,7 @@
 Terrain.cpp
 
 Author:			Chris Serson
-Last Edited:	July 2, 2016
+Last Edited:	July 6, 2016
 
 Description:	Class for loading a heightmap and rendering as a terrain.
 */
@@ -13,8 +13,10 @@ Terrain::Terrain(Graphics* GFX) {
 	D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
 	mpPSO2D = nullptr;
 	mpPSO3D = nullptr;
+	mpPSOTes = nullptr;
 	mpRootSig2D = nullptr;
 	mpRootSig3D = nullptr;
+	mpRootSigTes = nullptr;
 	mpSRVHeap = nullptr;
 	mpHeightmap = nullptr;
 	mpUploadHeightmap = nullptr;
@@ -37,7 +39,7 @@ Terrain::Terrain(Graphics* GFX) {
 	PrepareHeightmap(GFX); // the heightmap is used across 2D and 3D.
 	PreparePipeline2D(GFX);
 	PreparePipeline3D(GFX);
-	
+	PreparePipelineTess(GFX);
 }
 
 Terrain::~Terrain() {
@@ -88,6 +90,11 @@ Terrain::~Terrain() {
 		mpPSO3D = nullptr;
 	}
 	
+	if (mpPSOTes) {
+		mpPSOTes->Release();
+		mpPSOTes = nullptr;
+	}
+
 	if (mpRootSig2D) {
 		mpRootSig2D->Release();
 		mpRootSig2D = nullptr;
@@ -96,6 +103,11 @@ Terrain::~Terrain() {
 	if (mpRootSig3D) {
 		mpRootSig3D->Release();
 		mpRootSig3D = nullptr;
+	}
+
+	if (mpRootSigTes) {
+		mpRootSigTes->Release();
+		mpRootSigTes = nullptr;
 	}
 
 	if (mpCBV) {
@@ -134,12 +146,36 @@ void Terrain::Draw3D(ID3D12GraphicsCommandList* cmdList, XMFLOAT4X4 vp, XMFLOAT4
 	CD3DX12_GPU_DESCRIPTOR_HANDLE cbvHandle(mpSRVHeap->GetGPUDescriptorHandleForHeapStart(), 1, mSRVDescSize);
 	cmdList->SetGraphicsRootDescriptorTable(1, cbvHandle);
 
-	cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP); // describe how to read the vertex buffer.
+	cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST); // describe how to read the vertex buffer.
 	cmdList->IASetVertexBuffers(0, 1, &mVBV);
 	cmdList->IASetIndexBuffer(&mIBV);
 	
 	cmdList->DrawIndexedInstanced(mIndexCount, 1, 0, 0, 0);
 }
+
+void Terrain::DrawTess(ID3D12GraphicsCommandList* cmdList, XMFLOAT4X4 vp, XMFLOAT4 eye) {
+	cmdList->SetPipelineState(mpPSOTes);
+	cmdList->SetGraphicsRootSignature(mpRootSigTes);
+
+	mCBData.viewproj = vp;
+	mCBData.eye = eye;
+	mCBData.height = mHeight;
+	mCBData.width = mWidth;
+	memcpy(mpCBVDataBegin, &mCBData, sizeof(mCBData));
+
+	ID3D12DescriptorHeap* heaps[] = { mpSRVHeap };
+	cmdList->SetDescriptorHeaps(_countof(heaps), heaps);
+	cmdList->SetGraphicsRootDescriptorTable(0, mpSRVHeap->GetGPUDescriptorHandleForHeapStart());
+	CD3DX12_GPU_DESCRIPTOR_HANDLE cbvHandle(mpSRVHeap->GetGPUDescriptorHandleForHeapStart(), 1, mSRVDescSize);
+	cmdList->SetGraphicsRootDescriptorTable(1, cbvHandle);
+
+	cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_3_CONTROL_POINT_PATCHLIST); // describe how to read the vertex buffer.
+	cmdList->IASetVertexBuffers(0, 1, &mVBV);
+	cmdList->IASetIndexBuffer(&mIBV);
+
+	cmdList->DrawIndexedInstanced(mIndexCount, 1, 0, 0, 0);
+}
+
 
 // Once the GPU has completed uploading buffers to GPU memory, we need to free system memory.
 void Terrain::ClearUnusedUploadBuffersAfterInit() {
@@ -263,12 +299,78 @@ void Terrain::PreparePipeline3D(Graphics *GFX) {
 	psoDesc.SampleMask = UINT_MAX;
 	psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
 	psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
+	psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
 	psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
 	psoDesc.NumRenderTargets = 1;
 	psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
 	GFX->CreatePSO(&psoDesc, mpPSO3D);
 
 	CreateMesh3D(GFX);
+}
+
+// prepare RootSig, PSO, Shaders, and Descriptor heaps for 3D render
+void Terrain::PreparePipelineTess(Graphics *GFX) {
+	CD3DX12_ROOT_SIGNATURE_DESC			rootDesc;
+	CD3DX12_ROOT_PARAMETER				paramsRoot[2];
+	CD3DX12_DESCRIPTOR_RANGE			ranges[2];
+	CD3DX12_STATIC_SAMPLER_DESC			descSamplers[1];
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC	psoDesc = {};
+	DXGI_SAMPLE_DESC					sampleDesc = {};
+	D3D12_SHADER_BYTECODE				PSBytecode = {};
+	D3D12_SHADER_BYTECODE				VSBytecode = {};
+	D3D12_SHADER_BYTECODE				HSBytecode = {};
+	D3D12_SHADER_BYTECODE				DSBytecode = {};
+	D3D12_INPUT_LAYOUT_DESC				inputLayoutDesc = {};
+
+	// set up the Root Signature.
+	// create a descriptor table with 2 entries for the descriptor heap containing our SRV to the heightmap and our CBV.
+	ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+	paramsRoot[0].InitAsDescriptorTable(1, &ranges[0]);
+
+	// create a root parameter for our cbv
+	ranges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0);
+	paramsRoot[1].InitAsDescriptorTable(1, &ranges[1], D3D12_SHADER_VISIBILITY_ALL);
+
+	// create our texture sampler for the heightmap.
+	descSamplers[0].Init(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
+
+	// It isn't really necessary to deny the other shaders access, but it does technically allow the GPU to optimize more.
+	rootDesc.Init(_countof(paramsRoot), paramsRoot, 1, descSamplers, D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
+		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+	GFX->CreateRootSig(&rootDesc, mpRootSigTes);
+
+	GFX->CompileShader(L"RenderTerrainTessVS.hlsl", VSBytecode, VERTEX_SHADER);
+	GFX->CompileShader(L"RenderTerrainTessPS.hlsl", PSBytecode, PIXEL_SHADER);
+	GFX->CompileShader(L"RenderTerrainTessHS.hlsl", HSBytecode, HULL_SHADER);
+	GFX->CompileShader(L"RenderTerrainTessDS.hlsl", DSBytecode, DOMAIN_SHADER);
+
+	sampleDesc.Count = 1; // turns multi-sampling off. Not supported feature for my card.
+						  // create the pipeline state object
+						  // create input layout.
+	D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
+		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+	};
+
+	inputLayoutDesc.NumElements = sizeof(inputLayout) / sizeof(D3D12_INPUT_ELEMENT_DESC);
+	inputLayoutDesc.pInputElementDescs = inputLayout;
+
+	psoDesc.pRootSignature = mpRootSigTes;
+	psoDesc.InputLayout = inputLayoutDesc;
+	psoDesc.VS = VSBytecode;
+	psoDesc.PS = PSBytecode;
+	psoDesc.HS = HSBytecode;
+	psoDesc.DS = DSBytecode;
+	psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_PATCH;
+	psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+	psoDesc.SampleDesc = sampleDesc;
+	psoDesc.SampleMask = UINT_MAX;
+	psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+	psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
+	psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
+	psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+	psoDesc.NumRenderTargets = 1;
+	psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+	GFX->CreatePSO(&psoDesc, mpPSOTes);
 }
 
 // create a constant buffer to contain shader values
@@ -342,26 +444,18 @@ void Terrain::CreateMesh3D(Graphics *GFX) {
 	//  0,  1,  2,  3,  4,
 	//  5,  6,  7,  8,  9,
 	// 10, 11, 12, 13, 14
-	// we want our index buffer to define triangle strips that are wound correctly.
-	// 5, 0, 6, 1, 7, 2, 8, 3, 9, 4 shoud wind clockwise for every triangle in the strip.
-	int stripSize = width * 2;
-	int numStrips = height - 1;
-	arrSize = stripSize * numStrips + (numStrips - 1) * 4; // degenerate triangles
-
+	arrSize = (mWidth - 1) * (mHeight - 1) * 6;
 	UINT* indices = new UINT[arrSize];
 	int i = 0;
-	for (int s = 0; s < numStrips; ++s) {
-		int m = 0;
-		for (int n = 0; n < width; ++n) {
-			m = n + s * width;
-			indices[i++] = m + width;
-			indices[i++] = m;
-		}
-		if (s < numStrips - 1) {
-			indices[i++] = m;
-			indices[i++] = m - width + 1;
-			indices[i++] = m - width + 1;
-			indices[i++] = m - width + 1;
+	for (int y = 0; y < mHeight - 1; ++y) {
+		for (int x = 0; x < mWidth - 1; ++x) {
+			indices[i++] = x + y * mWidth;
+			indices[i++] = x + 1 + y * mWidth;
+			indices[i++] = x + (y + 1) * mWidth;
+
+			indices[i++] = x + 1 + y * mWidth;
+			indices[i++] = x + 1 + (y + 1) * mWidth;
+			indices[i++] = x + (y + 1) * mWidth;
 		}
 	}
 

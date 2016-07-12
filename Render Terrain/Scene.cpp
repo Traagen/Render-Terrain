@@ -2,7 +2,7 @@
 Scene.cpp
 
 Author:			Chris Serson
-Last Edited:	July 2, 2016
+Last Edited:	July 6, 2016
 
 Description:	Class for creating, managing, and rendering a scene.
 */
@@ -60,10 +60,12 @@ void Scene::Draw() {
 
 	SetViewport();
 
-	if (mDraw2D) {
+	if (mDrawMode == 1) {
 		T.Draw2D(mpGFX->GetCommandList());
-	} else {
+	} else if (mDrawMode == 2) {
 		T.Draw3D(mpGFX->GetCommandList(), C.GetViewProjectionMatrixTransposed(), C.GetEyePosition());
+	} else {
+		T.DrawTess(mpGFX->GetCommandList(), C.GetViewProjectionMatrixTransposed(), C.GetEyePosition());
 	}
 
 	mpGFX->SetBackBufferPresent(mpGFX->GetCommandList());
@@ -75,32 +77,38 @@ void Scene::Draw() {
 void Scene::HandleKeyboardInput(UINT key) {
 	switch (key) {
 		case _W:
-			if (!mDraw2D) C.Translate(XMFLOAT3(MOVE_STEP, 0.0f, 0.0f));
+			if (mDrawMode > 1) C.Translate(XMFLOAT3(MOVE_STEP, 0.0f, 0.0f));
 			break;
 		case _S:
-			if (!mDraw2D) C.Translate(XMFLOAT3(-MOVE_STEP, 0.0f, 0.0f));
+			if (mDrawMode > 1) C.Translate(XMFLOAT3(-MOVE_STEP, 0.0f, 0.0f));
 			break;
 		case _A:
-			if (!mDraw2D) C.Translate(XMFLOAT3(0.0f, MOVE_STEP, 0.0f));
+			if (mDrawMode > 1) C.Translate(XMFLOAT3(0.0f, MOVE_STEP, 0.0f));
 			break;
 		case _D:
-			if (!mDraw2D) C.Translate(XMFLOAT3(0.0f, -MOVE_STEP, 0.0f));
+			if (mDrawMode > 1) C.Translate(XMFLOAT3(0.0f, -MOVE_STEP, 0.0f));
 			break;
 		case _Q:
-			if (!mDraw2D) C.Translate(XMFLOAT3(0.0f, 0.0f, MOVE_STEP));
+			if (mDrawMode > 1) C.Translate(XMFLOAT3(0.0f, 0.0f, MOVE_STEP));
 			break;
 		case _Z:
-			if (!mDraw2D) C.Translate(XMFLOAT3(0.0f, 0.0f, -MOVE_STEP));
+			if (mDrawMode > 1) C.Translate(XMFLOAT3(0.0f, 0.0f, -MOVE_STEP));
 			break;
-		case _T: // toggle 2D/3D
-			mDraw2D = !mDraw2D;
+		case _1: // draw in 2D.
+			mDrawMode = 1;
+			break;
+		case _2: // draw in 3D.
+			mDrawMode = 2;
+			break;
+		case _3:
+			mDrawMode = 3;
 			break;
 	}
 }
 
 // function allowing the main program to pass mouse input to the scene.
 void Scene::HandleMouseInput(int x, int y) {
-	if (!mDraw2D) {
+	if (mDrawMode > 1) {
 		C.Pitch(ROT_ANGLE * y);
 		C.Yaw(-ROT_ANGLE * x);
 	}

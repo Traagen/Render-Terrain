@@ -13,7 +13,7 @@ Camera::Camera(int h, int w) {
 	mYaw = mPitch = mRoll = 0.0f;
 
 	// build projection matrix
-	XMMATRIX viewproj = XMMatrixPerspectiveFovLH(XMConvertToRadians(45.0f), (float)w / (float)h, 0.1f, 4000.0f);
+	XMMATRIX viewproj = XMMatrixPerspectiveFovLH(XMConvertToRadians(60.0f), (float)w / (float)h, 0.1f, 4000.0f);
 	XMStoreFloat4x4(&mmProjection, viewproj);
 
 	// set starting camera state
@@ -56,7 +56,8 @@ XMFLOAT4X4 Camera::GetViewProjectionMatrixTransposed() {
 	XMMATRIX view = XMMatrixLookAtLH(camera, target, up);
 	
 	XMMATRIX proj = XMLoadFloat4x4(&mmProjection);
-	XMMATRIX viewproj = XMMatrixTranspose(view * proj);
+	XMMATRIX scale = XMMatrixScaling(2.0f, 2.0f, 2.0f);
+	XMMATRIX viewproj = XMMatrixTranspose(scale * view * proj);
 	XMFLOAT4X4 final;
 	XMStoreFloat4x4(&final, viewproj);
 	return final;

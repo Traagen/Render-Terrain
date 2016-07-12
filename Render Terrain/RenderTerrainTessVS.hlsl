@@ -1,9 +1,9 @@
 struct VS_OUTPUT
 {
-	float4 pos : SV_POSITION;
-	float4 worldpos : POSITION;
+	float4 pos : POSITION0;
+//	float4 worldpos : POSITION1;
 	float4 norm : NORMAL;
-    float4 tex : TEXCOORD;
+//    float4 tex : TEXCOORD;
 };
 
 cbuffer ConstantBuffer : register(b0)
@@ -102,10 +102,8 @@ VS_OUTPUT main(float3 input : POSITION) {
 	float scale = height / 4;
 	float4 mysample = heightmap.Load(int3(input));
 	output.pos = float4(input.x, input.y, mysample.r * scale, 1.0f);
-//	output.pos = float4(input.x, input.y, 0.0f, 1.0f);
-	output.tex = float4(input.x / height, input.y / width, output.pos.z, scale);
-	output.pos = mul(output.pos, viewproj);
-
+//	output.tex = float4(input.x / height, input.y / width, output.pos.z, scale);
+	
 	float zb = heightmap.Load(int3(input.xy + int2(0, -1), 0)).r * scale;
 	float zc = heightmap.Load(int3(input.xy + int2(1, 0), 0)).r * scale;
 	float zd = heightmap.Load(int3(input.xy + int2(1, 1), 0)).r * scale;
@@ -119,7 +117,7 @@ VS_OUTPUT main(float3 input : POSITION) {
 
 	output.norm = float4(normalize(float3(x, y, z)), 1.0f);
 	
-	output.worldpos = float4(input, 1.0f);
+//	output.worldpos = float4(input, 1.0f);
 
 	return output;
 }
