@@ -33,6 +33,8 @@ public:
 	XMFLOAT4X4 GetViewProjectionMatrixTransposed();
 	// returns mvPos;
 	XMFLOAT4 GetEyePosition() { return mvPos; }
+	// Return the 6 planes forming the view frustum. Stored in the array planes.
+	void GetViewFrustum(XMFLOAT4 planes[6]);
 	// Move the camera along its 3 axis: mvLookAt (forward/backward), mvLeft (left/right), mvUp (up/down)
 	XMFLOAT4 Translate(XMFLOAT3 move);
 	// rotate the camera up and down, around mvLeft

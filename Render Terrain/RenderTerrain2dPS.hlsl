@@ -7,6 +7,6 @@ struct VS_OUTPUT {
 };
 
 float4 main(VS_OUTPUT input) : SV_TARGET {
-	return heightmap.Sample(hmsampler, input.tex);
-
+	float height = heightmap.Sample(hmsampler, input.tex).r;
+	return float4(height, height, height, 1);
 }

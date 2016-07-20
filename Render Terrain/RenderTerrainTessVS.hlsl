@@ -1,20 +1,15 @@
 struct VS_OUTPUT
 {
-	float4 pos : POSITION0;
-//	float4 worldpos : POSITION1;
-	float4 norm : NORMAL;
-//    float4 tex : TEXCOORD;
+	float3 worldpos : POSITION0;
+	float2 boundsZ : POSITION1;
+    float2 tex : TEXCOORD;
 };
 
-cbuffer ConstantBuffer : register(b0)
-{
-    float4x4 viewproj;
-	float4 eye;
-    int height;
-    int width;
-}
-
-Texture2D<float4> heightmap : register(t0);
+struct VS_INPUT {
+	float3 pos : POSITION0;
+	float2 boundsZ : POSITION1;
+	float2 tex : TEXCOORD;
+};
 
 // 4 point neighbourhood
 //       B
@@ -96,14 +91,13 @@ Texture2D<float4> heightmap : register(t0);
 //  \  |\  |
 //   \ | \ |
 //    \|__\|
-VS_OUTPUT main(float3 input : POSITION) {
+VS_OUTPUT main(VS_INPUT input) {
 	VS_OUTPUT output;
 
-	float scale = height / 4;
-	float4 mysample = heightmap.Load(int3(input));
-	output.pos = float4(input.x, input.y, mysample.r * scale, 1.0f);
+//	output.pos = float4(input.pos, 1.0f);
+	output.tex = input.tex;
 //	output.tex = float4(input.x / height, input.y / width, output.pos.z, scale);
-	
+/*	
 	float zb = heightmap.Load(int3(input.xy + int2(0, -1), 0)).r * scale;
 	float zc = heightmap.Load(int3(input.xy + int2(1, 0), 0)).r * scale;
 	float zd = heightmap.Load(int3(input.xy + int2(1, 1), 0)).r * scale;
@@ -116,8 +110,14 @@ VS_OUTPUT main(float3 input : POSITION) {
 	float z = 6.0f;
 
 	output.norm = float4(normalize(float3(x, y, z)), 1.0f);
-	
+	*/
+//	output.norm = input.norm;
+	output.worldpos = input.pos;
+//	output.norm = normalmap.Load(int3(input)).xyz;
+//	output.norm.z *= scale;
+
 //	output.worldpos = float4(input, 1.0f);
+	output.boundsZ = input.boundsZ;
 
 	return output;
 }

@@ -26,6 +26,9 @@ Terrain::Terrain(Graphics* GFX) {
 	mpUploadIB = nullptr;
 	mpCBV = nullptr;
 	maImage = nullptr;
+	maDetail = nullptr;
+	maVertices = nullptr;
+	maIndices = nullptr;
 
 	// create the SRV heap that points at the heightmap and CBV.
 	srvHeapDesc.NumDescriptors = 2;
@@ -118,6 +121,7 @@ Terrain::~Terrain() {
 	}
 
 	if (maImage) delete[] maImage;
+	if (maDetail) delete[] maDetail;
 }
 
 void Terrain::Draw2D(ID3D12GraphicsCommandList* cmdList) {
@@ -136,6 +140,7 @@ void Terrain::Draw3D(ID3D12GraphicsCommandList* cmdList, XMFLOAT4X4 vp, XMFLOAT4
 
 	mCBData.viewproj = vp;
 	mCBData.eye = eye;
+	mCBData.scale = mHeightScale;
 	mCBData.height = mHeight;
 	mCBData.width = mWidth;
 	memcpy(mpCBVDataBegin, &mCBData, sizeof(mCBData));
@@ -153,12 +158,19 @@ void Terrain::Draw3D(ID3D12GraphicsCommandList* cmdList, XMFLOAT4X4 vp, XMFLOAT4
 	cmdList->DrawIndexedInstanced(mIndexCount, 1, 0, 0, 0);
 }
 
-void Terrain::DrawTess(ID3D12GraphicsCommandList* cmdList, XMFLOAT4X4 vp, XMFLOAT4 eye) {
+void Terrain::DrawTess(ID3D12GraphicsCommandList* cmdList, XMFLOAT4X4 vp, XMFLOAT4 eye, XMFLOAT4 frustum[6]) {
 	cmdList->SetPipelineState(mpPSOTes);
 	cmdList->SetGraphicsRootSignature(mpRootSigTes);
 
 	mCBData.viewproj = vp;
 	mCBData.eye = eye;
+	mCBData.frustum[0] = frustum[0];
+	mCBData.frustum[1] = frustum[1];
+	mCBData.frustum[2] = frustum[2];
+	mCBData.frustum[3] = frustum[3];
+	mCBData.frustum[4] = frustum[4];
+	mCBData.frustum[5] = frustum[5];
+	mCBData.scale = mHeightScale;
 	mCBData.height = mHeight;
 	mCBData.width = mWidth;
 	memcpy(mpCBVDataBegin, &mCBData, sizeof(mCBData));
@@ -169,13 +181,12 @@ void Terrain::DrawTess(ID3D12GraphicsCommandList* cmdList, XMFLOAT4X4 vp, XMFLOA
 	CD3DX12_GPU_DESCRIPTOR_HANDLE cbvHandle(mpSRVHeap->GetGPUDescriptorHandleForHeapStart(), 1, mSRVDescSize);
 	cmdList->SetGraphicsRootDescriptorTable(1, cbvHandle);
 
-	cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_3_CONTROL_POINT_PATCHLIST); // describe how to read the vertex buffer.
+	cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_4_CONTROL_POINT_PATCHLIST); // describe how to read the vertex buffer.
 	cmdList->IASetVertexBuffers(0, 1, &mVBV);
 	cmdList->IASetIndexBuffer(&mIBV);
 
 	cmdList->DrawIndexedInstanced(mIndexCount, 1, 0, 0, 0);
 }
-
 
 // Once the GPU has completed uploading buffers to GPU memory, we need to free system memory.
 void Terrain::ClearUnusedUploadBuffersAfterInit() {
@@ -190,6 +201,14 @@ void Terrain::ClearUnusedUploadBuffersAfterInit() {
 	if (mpUploadVB) {
 		mpUploadVB->Release();
 		mpUploadVB = nullptr;
+	}
+
+	if (maVertices) {
+		delete[] maVertices;
+	}
+
+	if (maIndices) {
+		delete[] maIndices;
 	}
 }
 
@@ -255,7 +274,7 @@ void Terrain::PreparePipeline3D(Graphics *GFX) {
 	D3D12_INPUT_LAYOUT_DESC				inputLayoutDesc = {};
 
 	// set up the Root Signature.
-	// create a descriptor table with 2 entries for the descriptor heap containing our SRV to the heightmap and our CBV.
+	// create a descriptor table with 2 entries for the descriptor heap containing our SRV to the heightmap.
 	ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
 	paramsRoot[0].InitAsDescriptorTable(1, &ranges[0]);
 
@@ -265,6 +284,9 @@ void Terrain::PreparePipeline3D(Graphics *GFX) {
 	
 	// create our texture sampler for the heightmap.
 	descSamplers[0].Init(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
+	descSamplers[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+	descSamplers[0].AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+	descSamplers[0].AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
 	
 	// It isn't really necessary to deny the other shaders access, but it does technically allow the GPU to optimize more.
 	rootDesc.Init(_countof(paramsRoot), paramsRoot, 1, descSamplers, D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
@@ -284,6 +306,8 @@ void Terrain::PreparePipeline3D(Graphics *GFX) {
 	// create input layout.
 	D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
 		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "POSITION", 1, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 	};
 	
 	inputLayoutDesc.NumElements = sizeof(inputLayout) / sizeof(D3D12_INPUT_ELEMENT_DESC);
@@ -313,7 +337,7 @@ void Terrain::PreparePipelineTess(Graphics *GFX) {
 	CD3DX12_ROOT_SIGNATURE_DESC			rootDesc;
 	CD3DX12_ROOT_PARAMETER				paramsRoot[2];
 	CD3DX12_DESCRIPTOR_RANGE			ranges[2];
-	CD3DX12_STATIC_SAMPLER_DESC			descSamplers[1];
+	CD3DX12_STATIC_SAMPLER_DESC			descSamplers[3];
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC	psoDesc = {};
 	DXGI_SAMPLE_DESC					sampleDesc = {};
 	D3D12_SHADER_BYTECODE				PSBytecode = {};
@@ -333,9 +357,22 @@ void Terrain::PreparePipelineTess(Graphics *GFX) {
 
 	// create our texture sampler for the heightmap.
 	descSamplers[0].Init(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
+	descSamplers[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+	descSamplers[0].AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+	descSamplers[0].AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+	descSamplers[1].Init(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
+	descSamplers[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_DOMAIN;
+//	descSamplers[1].AddressU = D3D12_TEXTURE_ADDRESS_MODE_MIRROR;
+//	descSamplers[1].AddressV = D3D12_TEXTURE_ADDRESS_MODE_MIRROR;
+	descSamplers[1].ShaderRegister = 1;
+	descSamplers[2].Init(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
+	descSamplers[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+//	descSamplers[2].AddressU = D3D12_TEXTURE_ADDRESS_MODE_MIRROR;
+//	descSamplers[2].AddressV = D3D12_TEXTURE_ADDRESS_MODE_MIRROR;
+	descSamplers[2].ShaderRegister = 2;
 
 	// It isn't really necessary to deny the other shaders access, but it does technically allow the GPU to optimize more.
-	rootDesc.Init(_countof(paramsRoot), paramsRoot, 1, descSamplers, D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
+	rootDesc.Init(_countof(paramsRoot), paramsRoot, 3, descSamplers, D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
 		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 	GFX->CreateRootSig(&rootDesc, mpRootSigTes);
 
@@ -349,6 +386,8 @@ void Terrain::PreparePipelineTess(Graphics *GFX) {
 						  // create input layout.
 	D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
 		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "POSITION", 1, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 	};
 
 	inputLayoutDesc.NumElements = sizeof(inputLayout) / sizeof(D3D12_INPUT_ELEMENT_DESC);
@@ -366,7 +405,7 @@ void Terrain::PreparePipelineTess(Graphics *GFX) {
 	psoDesc.SampleMask = UINT_MAX;
 	psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
 	psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
-	psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
+	psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
 	psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
 	psoDesc.NumRenderTargets = 1;
 	psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
@@ -407,76 +446,109 @@ void Terrain::CreateMesh3D(Graphics *GFX) {
 	D3D12_SUBRESOURCE_DATA		indexData = {};
 	ID3D12GraphicsCommandList*	cmdList = GFX->GetCommandList();
 
-	int height = mHeight;
-	int width = mWidth;
-
 	// Create a vertex buffer
-	int arrSize = height * width;
+	mHeightScale = (float)mWidth / 4.0f;
+	int tessFactor = 4;
+	int scalePatchX = mWidth / tessFactor;
+	int scalePatchY = mHeight / tessFactor;
 
-	Vertex *vertices = new Vertex[arrSize];
-	for (int y = 0; y < height; ++y) {
-		for (int x = 0; x < width; ++x) {
-			vertices[y * width + x].position = XMFLOAT3((float)x, (float)y, 0.0f);
+	// create a vertex array 1/4 the size of the height map in each dimension,
+	// to be stretched over the height map
+	int arrSize = (int)(scalePatchX * scalePatchY);
+	maVertices = new Vertex[arrSize];
+	for (int y = 0; y < scalePatchY; ++y) {
+		for (int x = 0; x < scalePatchX; ++x) {
+			maVertices[y * scalePatchX + x].position = XMFLOAT3((float)x * tessFactor, (float)y * tessFactor, maImage[(y * mWidth * tessFactor + x * tessFactor) * 4] * mHeightScale);
+			maVertices[y * scalePatchX + x].tex = XMFLOAT2((float)x / scalePatchX, (float)y / scalePatchY);
 		}
 	}
-	
-	int buffSize = sizeof(Vertex) * arrSize;
+	int vBuffSize = sizeof(Vertex) * arrSize;
 
-	GFX->CreateCommittedBuffer(mpVertexBuffer, mpUploadVB, &CD3DX12_RESOURCE_DESC::Buffer(buffSize));
+	// create an index buffer
+	// our grid is scalePatchX * scalePatchY in size.
+	// the vertices are oriented like so:
+	//  0,  1,  2,  3,  4,
+	//  5,  6,  7,  8,  9,
+	// 10, 11, 12, 13, 14
+	arrSize = (scalePatchX - 1) * (scalePatchY - 1) * 4;
+	maIndices = new UINT[arrSize];
+	int i = 0;
+	for (int y = 0; y < scalePatchY - 1; ++y) {
+		for (int x = 0; x < scalePatchX - 1; ++x) {
+			UINT vert0 = x + y * scalePatchX;
+			UINT vert1 = x + 1 + y * scalePatchX;
+			UINT vert2 = x + (y + 1) * scalePatchX;
+			UINT vert3 = x + 1 + (y + 1) * scalePatchX;
+			maIndices[i++] = vert0;
+			maIndices[i++] = vert1;
+			maIndices[i++] = vert2;
+			maIndices[i++] = vert3;
+			
+			// now that we have the indices for our patch, we need to calculate the bounding box.
+			// z bounds is a bit harder as we need to find the max and min y values in the heightmap for the patch range.
+			// store it in the first vertex
+			XMFLOAT2 bz = CalcZBounds(maVertices[vert0], maVertices[vert3]);
+			maVertices[vert0].boundsZ = bz;
+		}
+	}
+
+	// upload the vertex buffer
+	GFX->CreateCommittedBuffer(mpVertexBuffer, mpUploadVB, &CD3DX12_RESOURCE_DESC::Buffer(vBuffSize));
 	mpVertexBuffer->SetName(L"Vertex buffer heap");
 	mpUploadVB->SetName(L"Vertex buffer upload heap");
 
-	vertexData.pData = vertices;
-	vertexData.RowPitch = buffSize;
-	vertexData.SlicePitch = buffSize;
-	
+	vertexData.pData = maVertices;
+	vertexData.RowPitch = vBuffSize;
+	vertexData.SlicePitch = vBuffSize;
+
 	UpdateSubresources(cmdList, mpVertexBuffer, mpUploadVB, 0, 0, 1, &vertexData);
 	cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(mpVertexBuffer, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER));
 
 	// create the vertex buffer view
 	mVBV.BufferLocation = mpVertexBuffer->GetGPUVirtualAddress();
 	mVBV.StrideInBytes = sizeof(Vertex);
-	mVBV.SizeInBytes = buffSize;
-	
-	// create an index buffer
-	// our grid is width * height in size.
-	// the vertices are oriented like so:
-	//  0,  1,  2,  3,  4,
-	//  5,  6,  7,  8,  9,
-	// 10, 11, 12, 13, 14
-	arrSize = (mWidth - 1) * (mHeight - 1) * 6;
-	UINT* indices = new UINT[arrSize];
-	int i = 0;
-	for (int y = 0; y < mHeight - 1; ++y) {
-		for (int x = 0; x < mWidth - 1; ++x) {
-			indices[i++] = x + y * mWidth;
-			indices[i++] = x + 1 + y * mWidth;
-			indices[i++] = x + (y + 1) * mWidth;
+	mVBV.SizeInBytes = vBuffSize;
 
-			indices[i++] = x + 1 + y * mWidth;
-			indices[i++] = x + 1 + (y + 1) * mWidth;
-			indices[i++] = x + (y + 1) * mWidth;
-		}
-	}
-
-	buffSize = sizeof(UINT) * arrSize;
+	// upload the index buffer
+	int iBuffSize = sizeof(UINT) * arrSize;
 	
-	GFX->CreateCommittedBuffer(mpIndexBuffer, mpUploadIB, &CD3DX12_RESOURCE_DESC::Buffer(buffSize));
+	GFX->CreateCommittedBuffer(mpIndexBuffer, mpUploadIB, &CD3DX12_RESOURCE_DESC::Buffer(iBuffSize));
 	mpIndexBuffer->SetName(L"Index buffer heap");
 	mpUploadIB->SetName(L"Index buffer upload heap");
 
-	indexData.pData = indices;
-	indexData.RowPitch = buffSize;
-	indexData.SlicePitch = buffSize;
+	indexData.pData = maIndices;
+	indexData.RowPitch = iBuffSize;
+	indexData.SlicePitch = iBuffSize;
 
 	UpdateSubresources(cmdList, mpIndexBuffer, mpUploadIB, 0, 0, 1, &indexData);
 	cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(mpIndexBuffer, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_INDEX_BUFFER));
 
 	mIBV.BufferLocation = mpIndexBuffer->GetGPUVirtualAddress();
 	mIBV.Format = DXGI_FORMAT_R32_UINT;
-	mIBV.SizeInBytes = buffSize;
+	mIBV.SizeInBytes = iBuffSize;
 
 	mIndexCount = arrSize;
+}
+
+// calculate the minimum and maximum z values for vertices between the provided bounds.
+XMFLOAT2 Terrain::CalcZBounds(Vertex bottomLeft, Vertex topRight) {
+	float max = -100000;
+	float min = 100000;
+	int bottomLeftX = bottomLeft.position.x == 0 ? (int)bottomLeft.position.x * 4 : ((int)bottomLeft.position.x - 1) * 4;
+	int bottomLeftY = bottomLeft.position.y == 0 ? (int)bottomLeft.position.y * 4 : ((int)bottomLeft.position.y - 1) * 4;
+	int topRightX = topRight.position.x * 4 >= mWidth ? (int)topRight.position.x * 4 : ((int)topRight.position.x + 1) * 4;
+	int topRightY = topRight.position.y * 4 >= mWidth ? (int)topRight.position.y * 4 : ((int)topRight.position.y + 1) * 4;
+
+	for (int y = bottomLeftY; y <= topRightY; y += 4) {
+		for (int x = bottomLeftX; x <= topRightX; x += 4) {
+			float z = maImage[x + y * mWidth] * mHeightScale;
+
+			if (z > max) max = z;
+			if (z < min) min = z;
+		}
+	}
+
+	return XMFLOAT2(min, max);
 }
 
 // loads the heightmap texture into memory
@@ -485,11 +557,11 @@ void Terrain::PrepareHeightmap(Graphics *GFX) {
 	D3D12_SUBRESOURCE_DATA				texData = {};
 	D3D12_SHADER_RESOURCE_VIEW_DESC		srvDesc = {};
 
-	LoadHeightMap("heightmap5.png");
+	LoadHeightMap("heightmap6.png", "hm6normalmap.png");
 
 	// create the texture.
 	texDesc.MipLevels = 1;
-	texDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	texDesc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT; // DXGI_FORMAT_R8G8B8A8_UNORM;
 	texDesc.Width = mWidth;
 	texDesc.Height = mHeight;
 	texDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
@@ -505,8 +577,8 @@ void Terrain::PrepareHeightmap(Graphics *GFX) {
 	srvDesc.Texture2D.MipLevels = texDesc.MipLevels;
 
 	texData.pData = maImage;
-	texData.RowPitch = mWidth * 4;
-	texData.SlicePitch = mHeight * mWidth * 4;
+	texData.RowPitch = mWidth * 4 * 4;
+	texData.SlicePitch = mHeight * mWidth * 4 * 4;
 	
 	GFX->CreateCommittedBuffer(mpHeightmap, mpUploadHeightmap, &texDesc);
 	// copy the data to the upload heap.
@@ -516,14 +588,43 @@ void Terrain::PrepareHeightmap(Graphics *GFX) {
 	UpdateSubresources(cmdList, mpHeightmap, mpUploadHeightmap, 0, 0, subresourceCount, &texData);
 	cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(mpHeightmap, D3D12_RESOURCE_STATE_COPY_DEST, 
 							 D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
-	GFX->CreateSRV(mpHeightmap, &srvDesc, mpSRVHeap);
+
+	GFX->CreateSRV(mpHeightmap, &srvDesc, mpSRVHeap->GetCPUDescriptorHandleForHeapStart());
 	mpHeightmap->SetName(L"Heightmap Resource Heap");
 	mpUploadHeightmap->SetName(L"Heightmap Upload Resource Heap");
 }
 
 // load the specified file containing the heightmap data.
-void Terrain::LoadHeightMap(const char* filename) {
-	//decode
-	unsigned error = lodepng_decode32_file(&maImage, &mWidth, &mHeight, filename);
-	if (error) throw GFX_Exception("Error loading heightmap texture.");
+void Terrain::LoadHeightMap(const char* fnHeightMap, const char* fnNormalMap) {
+	// load the black and white heightmap png file. Data is RGBA unsigned char.
+	unsigned char* tmpHeightMap;
+	unsigned error = lodepng_decode32_file(&tmpHeightMap, &mWidth, &mHeight, fnHeightMap);
+	if (error) {
+		throw GFX_Exception("Error loading terrain heightmap texture.");
+	}
+	// load the RGBA normal map png file.
+	unsigned char* tmpNormalMap;
+	unsigned int width, height;
+	error = lodepng_decode32_file(&tmpNormalMap, &width, &height, fnNormalMap);
+	if (error) {
+		throw GFX_Exception("Error loading terrain normalmap texture.");
+	}
+	if (width != mWidth || height != mHeight) {
+		throw GFX_Exception("Terrain normal map size does not match height map size.");
+	}
+
+	// Convert the height values to a float.
+	maImage = new float[mWidth * mHeight * 4]; // one slot for the height and 3 for the normal at the point.
+	// in this first loop, just copy the height value. We're going to scale it here as well.
+	for (unsigned int i = 0; i < mWidth * mHeight * 4; i += 4) {
+		// convert values to float between 0 and 1.
+		// store height in x component, normal in yzw components
+		maImage[i] = (float)tmpHeightMap[i] / 255.0f;
+		maImage[i + 1] = (float)tmpNormalMap[i] / 255.0f;
+		maImage[i + 2] = (float)tmpNormalMap[i + 1] / 255.0f;
+		maImage[i + 3] = (float)tmpNormalMap[i + 2] / 255.0f;
+	}
+	// we don't need the original data anymore.
+	delete[] tmpHeightMap; 
+	delete[] tmpNormalMap;
 }

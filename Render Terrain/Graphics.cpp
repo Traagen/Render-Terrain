@@ -152,7 +152,7 @@ namespace graphics {
 		// create optimized clear value and default heap for DSB.
 		dsOptimizedClearValue.Format = DXGI_FORMAT_D32_FLOAT;
 		dsOptimizedClearValue.DepthStencil.Depth = 1.0f;
-		dsOptimizedClearValue.DepthStencil.Stencil = 0.0f;
+		dsOptimizedClearValue.DepthStencil.Stencil = 0;
 
 		if (FAILED(mpDev->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT), D3D12_HEAP_FLAG_NONE,
 												  &CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_D32_FLOAT, width, height, 1, 0, 
@@ -284,8 +284,8 @@ namespace graphics {
 	}
 
 	// Create a Shader Resource view for the supplied resource.
-	void Graphics::CreateSRV(ID3D12Resource*& tex, D3D12_SHADER_RESOURCE_VIEW_DESC* srvDesc, ID3D12DescriptorHeap* heap) {
-		mpDev->CreateShaderResourceView(tex, srvDesc, heap->GetCPUDescriptorHandleForHeapStart());
+	void Graphics::CreateSRV(ID3D12Resource*& tex, D3D12_SHADER_RESOURCE_VIEW_DESC* srvDesc, D3D12_CPU_DESCRIPTOR_HANDLE handle) {
+		mpDev->CreateShaderResourceView(tex, srvDesc, handle);
 	}
 
 	// Create a constant buffer view

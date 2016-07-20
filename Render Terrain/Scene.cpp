@@ -65,7 +65,9 @@ void Scene::Draw() {
 	} else if (mDrawMode == 2) {
 		T.Draw3D(mpGFX->GetCommandList(), C.GetViewProjectionMatrixTransposed(), C.GetEyePosition());
 	} else {
-		T.DrawTess(mpGFX->GetCommandList(), C.GetViewProjectionMatrixTransposed(), C.GetEyePosition());
+		XMFLOAT4 frustum[6];
+		C.GetViewFrustum(frustum);
+		T.DrawTess(mpGFX->GetCommandList(), C.GetViewProjectionMatrixTransposed(), C.GetEyePosition(), frustum);
 	}
 
 	mpGFX->SetBackBufferPresent(mpGFX->GetCommandList());

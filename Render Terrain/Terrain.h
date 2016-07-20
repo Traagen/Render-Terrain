@@ -30,12 +30,16 @@ using namespace graphics;
 struct ConstantBuffer {
 	XMFLOAT4X4	viewproj;
 	XMFLOAT4	eye;
+	XMFLOAT4	frustum[6];
+	float		scale;
 	int			height;
 	int			width;
 };
 
 struct Vertex {
 	XMFLOAT3 position;
+	XMFLOAT2 boundsZ;
+	XMFLOAT2 tex;
 };
 
 class Terrain {
@@ -45,7 +49,7 @@ public:
 
 	void Draw2D(ID3D12GraphicsCommandList* cmdList);
 	void Draw3D(ID3D12GraphicsCommandList* cmdList, XMFLOAT4X4 vp, XMFLOAT4 eye);
-	void DrawTess(ID3D12GraphicsCommandList* cmdList, XMFLOAT4X4 vp, XMFLOAT4 eye);
+	void DrawTess(ID3D12GraphicsCommandList* cmdList, XMFLOAT4X4 vp, XMFLOAT4 eye, XMFLOAT4 frustum[6]);
 
 	// Once the GPU has completed uploading buffers to GPU memory, we need to free system memory.
 	void ClearUnusedUploadBuffersAfterInit();
@@ -60,11 +64,15 @@ private:
 	// generate vertex and index buffers for 3D mesh of terrain
 	void CreateMesh3D(Graphics *GFX);
 	// load the specified file containing the heightmap data.
-	void LoadHeightMap(const char* filename);
+	void LoadHeightMap(const char* fnHeightMap, const char* fnNormalMap);
 	// loads the heightmap texture into memory
 	void PrepareHeightmap(Graphics *GFX);
+	void PrepareDetailMap(Graphics *GFX);
+	void LoadDetailMap(const char* filename);
 	// create a constant buffer to contain shader values
 	void CreateConstantBuffer(Graphics *GFX);
+	// calculate the minimum and maximum z values for vertices between the provide bounds.
+	XMFLOAT2 CalcZBounds(Vertex topLeft, Vertex bottomRight);
 	
 	ID3D12PipelineState*		mpPSO2D;
 	ID3D12PipelineState*		mpPSO3D;
@@ -74,7 +82,7 @@ private:
 	ID3D12RootSignature*		mpRootSigTes;
 	ID3D12DescriptorHeap*		mpSRVHeap;			// Shader Resource View Heap
 	ID3D12Resource*				mpHeightmap;
-	ID3D12Resource*				mpUploadHeightmap;			// upload buffer for the heightmap.
+	ID3D12Resource*				mpUploadHeightmap;	// upload buffer for the heightmap.
 	ID3D12Resource*				mpCBV;	
 	ID3D12Resource*				mpVertexBuffer;
 	ID3D12Resource*				mpUploadVB;
@@ -82,12 +90,18 @@ private:
 	ID3D12Resource*				mpUploadIB;
 	D3D12_VERTEX_BUFFER_VIEW	mVBV;
 	D3D12_INDEX_BUFFER_VIEW		mIBV;
-	unsigned char*				maImage;
+	float*						maImage;
+	float*						maDetail;
 	unsigned int				mWidth;
 	unsigned int				mHeight;
+	unsigned int				mDetailWidth;
+	unsigned int				mDetailHeight;
 	unsigned int				mIndexCount;
+	float						mHeightScale;
 	ConstantBuffer				mCBData;
 	UINT8*						mpCBVDataBegin;		// memory mapped to CBV
 	UINT						mSRVDescSize;
+	Vertex*						maVertices;			// buffer to contain vertex array prior to upload.
+	UINT*						maIndices;			// buffer to contain index array prior to upload.
 };
 
