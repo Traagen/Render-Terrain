@@ -2,7 +2,7 @@
 Graphics.h
 
 Author:			Chris Serson
-Last Edited:	July 2, 2016
+Last Edited:	July 26, 2016
 
 Description:	Class for creating and managing a Direct3D 12 instance.
 
@@ -84,10 +84,12 @@ namespace graphics {
 		void CreateSRV(ID3D12Resource*& tex, D3D12_SHADER_RESOURCE_VIEW_DESC* srvDesc, D3D12_CPU_DESCRIPTOR_HANDLE handle);
 		// Create a constant buffer view
 		void CreateCBV(D3D12_CONSTANT_BUFFER_VIEW_DESC* desc, D3D12_CPU_DESCRIPTOR_HANDLE handle);
-		void CreateBuffer(ID3D12Resource*& buffer, D3D12_RESOURCE_DESC* texDesc);
-		// Create a committed default buffer and an upload buffer for copying data to it.
-		void CreateCommittedBuffer(ID3D12Resource*& buffer, ID3D12Resource*& upload, D3D12_RESOURCE_DESC* texDesc);
-		
+		// Create an upload buffer, ready for mapping.
+		void CreateUploadBuffer(ID3D12Resource*& buffer, D3D12_RESOURCE_DESC* texDesc);
+		// Create a default buffer, preconfigured as a copy destination
+		void CreateDefaultBuffer(ID3D12Resource*& buffer, D3D12_RESOURCE_DESC* texDesc);
+		// Create a commited resource. More general version of CreateUploadBuffer and CreateDefaultBuffer. Still needs work/testing.
+		void CreateCommittedResource(ID3D12Resource*& heap, D3D12_RESOURCE_DESC* descTex, D3D12_HEAP_PROPERTIES* propHeap, D3D12_HEAP_FLAGS flags, D3D12_RESOURCE_STATES state, D3D12_CLEAR_VALUE* clear);
 		// Compile the specified shader.
 		void CompileShader(LPCWSTR filename, D3D12_SHADER_BYTECODE& shaderBytecode, ShaderType st);
 		// Waits for and confirms that the GPU is done running any commands on the current back buffer.

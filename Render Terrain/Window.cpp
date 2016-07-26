@@ -12,7 +12,7 @@ using namespace window;
 
 Window::Window(LPCWSTR appName, int height, int width, WNDPROC WndProc, bool isFullscreen) {
 	mAppName = appName;
-	mHeight = height;
+	mDepth = height;
 	mWidth = width;
 	mFullscreen = isFullscreen;
 
@@ -62,15 +62,15 @@ Window::Window(LPCWSTR appName, int height, int width, WNDPROC WndProc, bool isF
 		}
 		// Set the position of the window to the top left corner.
 		posX = posY = 0;
-		mHeight = h;
+		mDepth = h;
 		mWidth = w;
 	}
 	else {
 		// Place the window in the middle of the screen.
 		posX = (w - mWidth) / 2;
-		posY = (h - mHeight) / 2;
+		posY = (h - mDepth) / 2;
 		// set the height and width to what we want the window to be.
-		h = mHeight;
+		h = mDepth;
 		w = mWidth;
 	}
 

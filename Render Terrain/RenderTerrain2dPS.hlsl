@@ -1,4 +1,4 @@
-Texture2D<float4> heightmap : register(t0);
+Texture2D<float> heightmap : register(t0);
 SamplerState hmsampler : register(s0);
 
 struct VS_OUTPUT {
@@ -7,6 +7,6 @@ struct VS_OUTPUT {
 };
 
 float4 main(VS_OUTPUT input) : SV_TARGET {
-	float height = heightmap.Sample(hmsampler, input.tex).r;
+	float height = heightmap.Sample(hmsampler, input.tex);
 	return float4(height, height, height, 1);
 }

@@ -36,14 +36,14 @@ namespace window {
 		~Window();
 
 		HWND GetWindow() { return mWindow; }
-		int Height() { return mHeight; }
+		int Height() { return mDepth; }
 		int Width() { return mWidth; }
 
 	private:
 		HINSTANCE mInstance;
 		HWND mWindow;
 		bool mFullscreen;
-		int mHeight;
+		int mDepth;
 		int mWidth;
 		LPCWSTR mAppName;
 	};

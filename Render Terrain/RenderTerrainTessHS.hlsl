@@ -1,17 +1,13 @@
-cbuffer ConstantBuffer : register(b0)
+cbuffer PerFrameData : register(b0)
 {
 	float4x4 viewproj;
 	float4 eye;
 	float4 frustum[6];
-	float scale;
-	int height;
-	int width;
 }
 
 // Input control point
 struct VS_OUTPUT
 {
-//	float4 pos : POSITION0;
 	float3 worldpos : POSITION0;
 	float2 boundsZ : POSITION1;
 	float2 tex : TEXCOORD;
@@ -19,9 +15,7 @@ struct VS_OUTPUT
 // Output control point
 struct HS_CONTROL_POINT_OUTPUT
 {
-//	float4 pos : POSITION0;
 	float3 worldpos : POSITION;
-//	float3 norm : NORMAL;
 	float2 tex : TEXCOORD;
 };
 
@@ -131,8 +125,6 @@ HS_CONTROL_POINT_OUTPUT main(
 	HS_CONTROL_POINT_OUTPUT output;
 
 	// Insert code to compute Output here
-//	output.pos = ip[i].pos;
-//	output.norm = ip[i].norm;
 	output.worldpos = ip[i].worldpos;
 	output.tex = ip[i].tex;
 

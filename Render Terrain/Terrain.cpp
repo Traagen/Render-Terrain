@@ -2,70 +2,31 @@
 Terrain.cpp
 
 Author:			Chris Serson
-Last Edited:	July 6, 2016
+Last Edited:	July 26, 2016
 
 Description:	Class for loading a heightmap and rendering as a terrain.
 */
 #include "lodepng.h"
 #include "Terrain.h"
 
-Terrain::Terrain(Graphics* GFX) {
-	D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
-	mpPSO2D = nullptr;
-	mpPSO3D = nullptr;
-	mpPSOTes = nullptr;
-	mpRootSig2D = nullptr;
-	mpRootSig3D = nullptr;
-	mpRootSigTes = nullptr;
-	mpSRVHeap = nullptr;
+Terrain::Terrain() {
 	mpHeightmap = nullptr;
-	mpUploadHeightmap = nullptr;
 	mpVertexBuffer = nullptr;
-	mpUploadVB = nullptr;
 	mpIndexBuffer = nullptr;
-	mpUploadIB = nullptr;
-	mpCBV = nullptr;
 	maImage = nullptr;
-	maDetail = nullptr;
 	maVertices = nullptr;
 	maIndices = nullptr;
 
-	// create the SRV heap that points at the heightmap and CBV.
-	srvHeapDesc.NumDescriptors = 2;
-	srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-	srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-	GFX->CreateDescriptorHeap(&srvHeapDesc, mpSRVHeap);
-	mpSRVHeap->SetName(L"CBV/SRV Heap");
-
-	mSRVDescSize = GFX->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-
-	PrepareHeightmap(GFX); // the heightmap is used across 2D and 3D.
-	PreparePipeline2D(GFX);
-	PreparePipeline3D(GFX);
-	PreparePipelineTess(GFX);
+	LoadHeightMap("heightmap6.png");
+	CreateMesh3D();
 }
 
 Terrain::~Terrain() {
 	// The order resources are released appears to matter. I haven't tested all possible orders, but at least releasing the heap
 	// and resources after the pso and rootsig was causing my GPU to hang on shutdown. Using the current order resolved that issue.
-	if (mpSRVHeap) {
-		mpSRVHeap->Release();
-		mpSRVHeap = nullptr;
-	}
-
-	if (mpUploadHeightmap) {
-		mpUploadHeightmap->Release();
-		mpUploadHeightmap = nullptr;
-	}
-
 	if (mpHeightmap) {
 		mpHeightmap->Release();
 		mpHeightmap = nullptr;
-	}
-
-	if (mpUploadIB) {
-		mpUploadIB->Release();
-		mpUploadIB = nullptr;
 	}
 
 	if (mpIndexBuffer) {
@@ -73,384 +34,51 @@ Terrain::~Terrain() {
 		mpIndexBuffer = nullptr;
 	}
 
-	if (mpUploadVB) {
-		mpUploadVB->Release();
-		mpUploadVB = nullptr;
-	}
-
 	if (mpVertexBuffer) {
 		mpVertexBuffer->Release();
 		mpVertexBuffer = nullptr;
 	}
 
-	if (mpPSO2D) {
-		mpPSO2D->Release();
-		mpPSO2D = nullptr;
-	}
-
-	if (mpPSO3D) {
-		mpPSO3D->Release();
-		mpPSO3D = nullptr;
-	}
-	
-	if (mpPSOTes) {
-		mpPSOTes->Release();
-		mpPSOTes = nullptr;
-	}
-
-	if (mpRootSig2D) {
-		mpRootSig2D->Release();
-		mpRootSig2D = nullptr;
-	}
-
-	if (mpRootSig3D) {
-		mpRootSig3D->Release();
-		mpRootSig3D = nullptr;
-	}
-
-	if (mpRootSigTes) {
-		mpRootSigTes->Release();
-		mpRootSigTes = nullptr;
-	}
-
-	if (mpCBV) {
-		mpCBV->Unmap(0, nullptr);
-		mpCBVDataBegin = nullptr;
-		mpCBV->Release();
-		mpCBV = nullptr;
-	}
-
 	if (maImage) delete[] maImage;
-	if (maDetail) delete[] maDetail;
+
+	DeleteVertexAndIndexArrays();
 }
 
-void Terrain::Draw2D(ID3D12GraphicsCommandList* cmdList) {
-	cmdList->SetPipelineState(mpPSO2D);
-	cmdList->SetGraphicsRootSignature(mpRootSig2D);
-	cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST); // describe how to read the vertex buffer.
-	ID3D12DescriptorHeap* heaps[] = { mpSRVHeap };
-	cmdList->SetDescriptorHeaps(1, heaps);
-	cmdList->SetGraphicsRootDescriptorTable(0, mpSRVHeap->GetGPUDescriptorHandleForHeapStart());
-	cmdList->DrawInstanced(3, 1, 0, 0);
-}
+void Terrain::Draw(ID3D12GraphicsCommandList* cmdList, bool Draw3D) {
+	if (Draw3D) {
+		cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_4_CONTROL_POINT_PATCHLIST); // describe how to read the vertex buffer.
+		cmdList->IASetVertexBuffers(0, 1, &mVBV);
+		cmdList->IASetIndexBuffer(&mIBV);
 
-void Terrain::Draw3D(ID3D12GraphicsCommandList* cmdList, XMFLOAT4X4 vp, XMFLOAT4 eye) {
-	cmdList->SetPipelineState(mpPSO3D);
-	cmdList->SetGraphicsRootSignature(mpRootSig3D);
-
-	mCBData.viewproj = vp;
-	mCBData.eye = eye;
-	mCBData.scale = mHeightScale;
-	mCBData.height = mHeight;
-	mCBData.width = mWidth;
-	memcpy(mpCBVDataBegin, &mCBData, sizeof(mCBData));
-	
-	ID3D12DescriptorHeap* heaps[] = { mpSRVHeap };
-	cmdList->SetDescriptorHeaps(_countof(heaps), heaps);
-	cmdList->SetGraphicsRootDescriptorTable(0, mpSRVHeap->GetGPUDescriptorHandleForHeapStart());
-	CD3DX12_GPU_DESCRIPTOR_HANDLE cbvHandle(mpSRVHeap->GetGPUDescriptorHandleForHeapStart(), 1, mSRVDescSize);
-	cmdList->SetGraphicsRootDescriptorTable(1, cbvHandle);
-
-	cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST); // describe how to read the vertex buffer.
-	cmdList->IASetVertexBuffers(0, 1, &mVBV);
-	cmdList->IASetIndexBuffer(&mIBV);
-	
-	cmdList->DrawIndexedInstanced(mIndexCount, 1, 0, 0, 0);
-}
-
-void Terrain::DrawTess(ID3D12GraphicsCommandList* cmdList, XMFLOAT4X4 vp, XMFLOAT4 eye, XMFLOAT4 frustum[6]) {
-	cmdList->SetPipelineState(mpPSOTes);
-	cmdList->SetGraphicsRootSignature(mpRootSigTes);
-
-	mCBData.viewproj = vp;
-	mCBData.eye = eye;
-	mCBData.frustum[0] = frustum[0];
-	mCBData.frustum[1] = frustum[1];
-	mCBData.frustum[2] = frustum[2];
-	mCBData.frustum[3] = frustum[3];
-	mCBData.frustum[4] = frustum[4];
-	mCBData.frustum[5] = frustum[5];
-	mCBData.scale = mHeightScale;
-	mCBData.height = mHeight;
-	mCBData.width = mWidth;
-	memcpy(mpCBVDataBegin, &mCBData, sizeof(mCBData));
-
-	ID3D12DescriptorHeap* heaps[] = { mpSRVHeap };
-	cmdList->SetDescriptorHeaps(_countof(heaps), heaps);
-	cmdList->SetGraphicsRootDescriptorTable(0, mpSRVHeap->GetGPUDescriptorHandleForHeapStart());
-	CD3DX12_GPU_DESCRIPTOR_HANDLE cbvHandle(mpSRVHeap->GetGPUDescriptorHandleForHeapStart(), 1, mSRVDescSize);
-	cmdList->SetGraphicsRootDescriptorTable(1, cbvHandle);
-
-	cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_4_CONTROL_POINT_PATCHLIST); // describe how to read the vertex buffer.
-	cmdList->IASetVertexBuffers(0, 1, &mVBV);
-	cmdList->IASetIndexBuffer(&mIBV);
-
-	cmdList->DrawIndexedInstanced(mIndexCount, 1, 0, 0, 0);
+		cmdList->DrawIndexedInstanced(mIndexCount, 1, 0, 0, 0);
+	} else {
+		// draw in 2D
+		cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST); // describe how to read the vertex buffer.
+		cmdList->DrawInstanced(3, 1, 0, 0);
+	}
 }
 
 // Once the GPU has completed uploading buffers to GPU memory, we need to free system memory.
-void Terrain::ClearUnusedUploadBuffersAfterInit() {
-	if (mpUploadHeightmap) {
-		mpUploadHeightmap->Release();
-		mpUploadHeightmap = nullptr;
-	}
-	if (mpUploadIB) {
-		mpUploadIB->Release();
-		mpUploadIB = nullptr;
-	}
-	if (mpUploadVB) {
-		mpUploadVB->Release();
-		mpUploadVB = nullptr;
-	}
-
+void Terrain::DeleteVertexAndIndexArrays() {
 	if (maVertices) {
 		delete[] maVertices;
+		maVertices = nullptr;
 	}
 
 	if (maIndices) {
 		delete[] maIndices;
-	}
-}
-
-// prepare RootSig, PSO, Shaders, and Descriptor heaps for 2D render
-void Terrain::PreparePipeline2D(Graphics *GFX) {
-	CD3DX12_ROOT_SIGNATURE_DESC			rootDesc;
-	CD3DX12_ROOT_PARAMETER				paramsRoot[1];
-	CD3DX12_DESCRIPTOR_RANGE			rangeRoot;
-	CD3DX12_STATIC_SAMPLER_DESC			descSamplers[1];
-	D3D12_GRAPHICS_PIPELINE_STATE_DESC	psoDesc = {};
-	DXGI_SAMPLE_DESC					sampleDesc = {};
-	D3D12_SHADER_BYTECODE				PSBytecode = {};
-	D3D12_SHADER_BYTECODE				VSBytecode = {};
-
-	// set up the Root Signature.
-	// create a descriptor table with 1 entry for the descriptor heap containing our SRV to the heightmap.
-	rangeRoot.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
-	paramsRoot[0].InitAsDescriptorTable(1, &rangeRoot);
-
-	// create our texture sampler for the heightmap.
-	descSamplers[0].Init(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
-	
-	// It isn't really necessary to deny the other shaders access, but it does technically allow the GPU to optimize more.
-	rootDesc.Init(1, paramsRoot, 1, descSamplers, D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS | 
-												  D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
-												  D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
-												  D3D12_ROOT_SIGNATURE_FLAG_DENY_VERTEX_SHADER_ROOT_ACCESS);
-	GFX->CreateRootSig(&rootDesc, mpRootSig2D);
-
-	GFX->CompileShader(L"RenderTerrain2dVS.hlsl", VSBytecode, VERTEX_SHADER);
-	GFX->CompileShader(L"RenderTerrain2dPS.hlsl", PSBytecode, PIXEL_SHADER);
-
-	sampleDesc.Count = 1; // turns multi-sampling off. Not supported feature for my card.
-						  // create the pipeline state object
-
-	psoDesc.pRootSignature = mpRootSig2D;
-	psoDesc.VS = VSBytecode;
-	psoDesc.PS = PSBytecode;
-	psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-	psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
-	psoDesc.SampleDesc = sampleDesc;
-	psoDesc.SampleMask = UINT_MAX;
-	psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-	psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
-	psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-	psoDesc.NumRenderTargets = 1;
-	psoDesc.DepthStencilState.DepthEnable = false;
-	psoDesc.DepthStencilState.StencilEnable = false;
-
-	GFX->CreatePSO(&psoDesc, mpPSO2D);
-}
-
-// prepare RootSig, PSO, Shaders, and Descriptor heaps for 3D render
-void Terrain::PreparePipeline3D(Graphics *GFX) {
-	CD3DX12_ROOT_SIGNATURE_DESC			rootDesc;
-	CD3DX12_ROOT_PARAMETER				paramsRoot[2];
-	CD3DX12_DESCRIPTOR_RANGE			ranges[2];
-	CD3DX12_STATIC_SAMPLER_DESC			descSamplers[1];
-	D3D12_GRAPHICS_PIPELINE_STATE_DESC	psoDesc = {};
-	DXGI_SAMPLE_DESC					sampleDesc = {};
-	D3D12_SHADER_BYTECODE				PSBytecode = {};
-	D3D12_SHADER_BYTECODE				VSBytecode = {};
-	D3D12_INPUT_LAYOUT_DESC				inputLayoutDesc = {};
-
-	// set up the Root Signature.
-	// create a descriptor table with 2 entries for the descriptor heap containing our SRV to the heightmap.
-	ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
-	paramsRoot[0].InitAsDescriptorTable(1, &ranges[0]);
-
-	// create a root parameter for our cbv
-	ranges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0);
-	paramsRoot[1].InitAsDescriptorTable(1, &ranges[1], D3D12_SHADER_VISIBILITY_ALL);
-	
-	// create our texture sampler for the heightmap.
-	descSamplers[0].Init(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
-	descSamplers[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-	descSamplers[0].AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-	descSamplers[0].AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-	
-	// It isn't really necessary to deny the other shaders access, but it does technically allow the GPU to optimize more.
-	rootDesc.Init(_countof(paramsRoot), paramsRoot, 1, descSamplers, D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
-																	 D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
-																	 D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
-																	 D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
-	GFX->CreateRootSig(&rootDesc, mpRootSig3D);
-
-	CreateConstantBuffer(GFX);
-
-	GFX->CompileShader(L"RenderTerrain3dVS.hlsl", VSBytecode, VERTEX_SHADER);
-	GFX->CompileShader(L"RenderTerrain3dPS.hlsl", PSBytecode, PIXEL_SHADER);
-
-	sampleDesc.Count = 1; // turns multi-sampling off. Not supported feature for my card.
-	
-	// create the pipeline state object
-	// create input layout.
-	D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
-		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		{ "POSITION", 1, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-	};
-	
-	inputLayoutDesc.NumElements = sizeof(inputLayout) / sizeof(D3D12_INPUT_ELEMENT_DESC);
-	inputLayoutDesc.pInputElementDescs = inputLayout;
-
-	psoDesc.pRootSignature = mpRootSig3D;
-	psoDesc.InputLayout = inputLayoutDesc;
-	psoDesc.VS = VSBytecode;
-	psoDesc.PS = PSBytecode;
-	psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-	psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
-	psoDesc.SampleDesc = sampleDesc;
-	psoDesc.SampleMask = UINT_MAX;
-	psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-	psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
-	psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
-	psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-	psoDesc.NumRenderTargets = 1;
-	psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-	GFX->CreatePSO(&psoDesc, mpPSO3D);
-
-	CreateMesh3D(GFX);
-}
-
-// prepare RootSig, PSO, Shaders, and Descriptor heaps for 3D render
-void Terrain::PreparePipelineTess(Graphics *GFX) {
-	CD3DX12_ROOT_SIGNATURE_DESC			rootDesc;
-	CD3DX12_ROOT_PARAMETER				paramsRoot[2];
-	CD3DX12_DESCRIPTOR_RANGE			ranges[2];
-	CD3DX12_STATIC_SAMPLER_DESC			descSamplers[3];
-	D3D12_GRAPHICS_PIPELINE_STATE_DESC	psoDesc = {};
-	DXGI_SAMPLE_DESC					sampleDesc = {};
-	D3D12_SHADER_BYTECODE				PSBytecode = {};
-	D3D12_SHADER_BYTECODE				VSBytecode = {};
-	D3D12_SHADER_BYTECODE				HSBytecode = {};
-	D3D12_SHADER_BYTECODE				DSBytecode = {};
-	D3D12_INPUT_LAYOUT_DESC				inputLayoutDesc = {};
-
-	// set up the Root Signature.
-	// create a descriptor table with 2 entries for the descriptor heap containing our SRV to the heightmap and our CBV.
-	ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
-	paramsRoot[0].InitAsDescriptorTable(1, &ranges[0]);
-
-	// create a root parameter for our cbv
-	ranges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0);
-	paramsRoot[1].InitAsDescriptorTable(1, &ranges[1], D3D12_SHADER_VISIBILITY_ALL);
-
-	// create our texture sampler for the heightmap.
-	descSamplers[0].Init(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
-	descSamplers[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-	descSamplers[0].AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-	descSamplers[0].AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-	descSamplers[1].Init(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
-	descSamplers[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_DOMAIN;
-//	descSamplers[1].AddressU = D3D12_TEXTURE_ADDRESS_MODE_MIRROR;
-//	descSamplers[1].AddressV = D3D12_TEXTURE_ADDRESS_MODE_MIRROR;
-	descSamplers[1].ShaderRegister = 1;
-	descSamplers[2].Init(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
-	descSamplers[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-//	descSamplers[2].AddressU = D3D12_TEXTURE_ADDRESS_MODE_MIRROR;
-//	descSamplers[2].AddressV = D3D12_TEXTURE_ADDRESS_MODE_MIRROR;
-	descSamplers[2].ShaderRegister = 2;
-
-	// It isn't really necessary to deny the other shaders access, but it does technically allow the GPU to optimize more.
-	rootDesc.Init(_countof(paramsRoot), paramsRoot, 3, descSamplers, D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
-		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
-	GFX->CreateRootSig(&rootDesc, mpRootSigTes);
-
-	GFX->CompileShader(L"RenderTerrainTessVS.hlsl", VSBytecode, VERTEX_SHADER);
-	GFX->CompileShader(L"RenderTerrainTessPS.hlsl", PSBytecode, PIXEL_SHADER);
-	GFX->CompileShader(L"RenderTerrainTessHS.hlsl", HSBytecode, HULL_SHADER);
-	GFX->CompileShader(L"RenderTerrainTessDS.hlsl", DSBytecode, DOMAIN_SHADER);
-
-	sampleDesc.Count = 1; // turns multi-sampling off. Not supported feature for my card.
-						  // create the pipeline state object
-						  // create input layout.
-	D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
-		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		{ "POSITION", 1, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-	};
-
-	inputLayoutDesc.NumElements = sizeof(inputLayout) / sizeof(D3D12_INPUT_ELEMENT_DESC);
-	inputLayoutDesc.pInputElementDescs = inputLayout;
-
-	psoDesc.pRootSignature = mpRootSigTes;
-	psoDesc.InputLayout = inputLayoutDesc;
-	psoDesc.VS = VSBytecode;
-	psoDesc.PS = PSBytecode;
-	psoDesc.HS = HSBytecode;
-	psoDesc.DS = DSBytecode;
-	psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_PATCH;
-	psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
-	psoDesc.SampleDesc = sampleDesc;
-	psoDesc.SampleMask = UINT_MAX;
-	psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-	psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
-	psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
-	psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-	psoDesc.NumRenderTargets = 1;
-	psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-	GFX->CreatePSO(&psoDesc, mpPSOTes);
-}
-
-// create a constant buffer to contain shader values
-void Terrain::CreateConstantBuffer(Graphics *GFX) {
-	D3D12_DESCRIPTOR_HEAP_DESC		heapDesc = {};
-	D3D12_CONSTANT_BUFFER_VIEW_DESC	cbvDesc = {};
-	CD3DX12_RANGE					readRange(0, 0); // we won't be reading from this resource
-	UINT64							buffSize = sizeof(ConstantBuffer);
-
-	// Create an upload buffer for the CBV
-	GFX->CreateBuffer(mpCBV, &CD3DX12_RESOURCE_DESC::Buffer(buffSize));
-	mpCBV->SetName(L"CBV");
-
-	// Create the CBV itself
-	cbvDesc.BufferLocation = mpCBV->GetGPUVirtualAddress();
-	cbvDesc.SizeInBytes = (buffSize + 255) & ~255; // CB size is required to be 256-byte aligned.
-
-	CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(mpSRVHeap->GetCPUDescriptorHandleForHeapStart(), 1, mSRVDescSize);
-
-	GFX->CreateCBV(&cbvDesc, srvHandle);
-
-	// initialize and map the constant buffers.
-	// per the DirectX 12 sample code, we can leave this mapped until we close.
-	ZeroMemory(&mCBData, sizeof(mCBData));
-
-	if (FAILED(mpCBV->Map(0, &readRange, reinterpret_cast<void**>(&mpCBVDataBegin)))) {
-		throw (GFX_Exception("Failed to map CBV in Terrain."));
+		maIndices = nullptr;
 	}
 }
 
 // generate vertex and index buffers for 3D mesh of terrain
-void Terrain::CreateMesh3D(Graphics *GFX) {
-	D3D12_SUBRESOURCE_DATA		vertexData = {};
-	D3D12_SUBRESOURCE_DATA		indexData = {};
-	ID3D12GraphicsCommandList*	cmdList = GFX->GetCommandList();
-
+void Terrain::CreateMesh3D() {
 	// Create a vertex buffer
 	mHeightScale = (float)mWidth / 4.0f;
 	int tessFactor = 4;
 	int scalePatchX = mWidth / tessFactor;
-	int scalePatchY = mHeight / tessFactor;
+	int scalePatchY = mDepth / tessFactor;
+	mVertexCount = scalePatchX * scalePatchY;
 
 	// create a vertex array 1/4 the size of the height map in each dimension,
 	// to be stretched over the height map
@@ -458,11 +86,10 @@ void Terrain::CreateMesh3D(Graphics *GFX) {
 	maVertices = new Vertex[arrSize];
 	for (int y = 0; y < scalePatchY; ++y) {
 		for (int x = 0; x < scalePatchX; ++x) {
-			maVertices[y * scalePatchX + x].position = XMFLOAT3((float)x * tessFactor, (float)y * tessFactor, maImage[(y * mWidth * tessFactor + x * tessFactor) * 4] * mHeightScale);
+			maVertices[y * scalePatchX + x].position = XMFLOAT3((float)x * tessFactor, (float)y * tessFactor, maImage[y * mWidth * tessFactor + x * tessFactor] * mHeightScale);
 			maVertices[y * scalePatchX + x].tex = XMFLOAT2((float)x / scalePatchX, (float)y / scalePatchY);
 		}
 	}
-	int vBuffSize = sizeof(Vertex) * arrSize;
 
 	// create an index buffer
 	// our grid is scalePatchX * scalePatchY in size.
@@ -492,41 +119,6 @@ void Terrain::CreateMesh3D(Graphics *GFX) {
 		}
 	}
 
-	// upload the vertex buffer
-	GFX->CreateCommittedBuffer(mpVertexBuffer, mpUploadVB, &CD3DX12_RESOURCE_DESC::Buffer(vBuffSize));
-	mpVertexBuffer->SetName(L"Vertex buffer heap");
-	mpUploadVB->SetName(L"Vertex buffer upload heap");
-
-	vertexData.pData = maVertices;
-	vertexData.RowPitch = vBuffSize;
-	vertexData.SlicePitch = vBuffSize;
-
-	UpdateSubresources(cmdList, mpVertexBuffer, mpUploadVB, 0, 0, 1, &vertexData);
-	cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(mpVertexBuffer, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER));
-
-	// create the vertex buffer view
-	mVBV.BufferLocation = mpVertexBuffer->GetGPUVirtualAddress();
-	mVBV.StrideInBytes = sizeof(Vertex);
-	mVBV.SizeInBytes = vBuffSize;
-
-	// upload the index buffer
-	int iBuffSize = sizeof(UINT) * arrSize;
-	
-	GFX->CreateCommittedBuffer(mpIndexBuffer, mpUploadIB, &CD3DX12_RESOURCE_DESC::Buffer(iBuffSize));
-	mpIndexBuffer->SetName(L"Index buffer heap");
-	mpUploadIB->SetName(L"Index buffer upload heap");
-
-	indexData.pData = maIndices;
-	indexData.RowPitch = iBuffSize;
-	indexData.SlicePitch = iBuffSize;
-
-	UpdateSubresources(cmdList, mpIndexBuffer, mpUploadIB, 0, 0, 1, &indexData);
-	cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(mpIndexBuffer, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_INDEX_BUFFER));
-
-	mIBV.BufferLocation = mpIndexBuffer->GetGPUVirtualAddress();
-	mIBV.Format = DXGI_FORMAT_R32_UINT;
-	mIBV.SizeInBytes = iBuffSize;
-
 	mIndexCount = arrSize;
 }
 
@@ -534,13 +126,13 @@ void Terrain::CreateMesh3D(Graphics *GFX) {
 XMFLOAT2 Terrain::CalcZBounds(Vertex bottomLeft, Vertex topRight) {
 	float max = -100000;
 	float min = 100000;
-	int bottomLeftX = bottomLeft.position.x == 0 ? (int)bottomLeft.position.x * 4 : ((int)bottomLeft.position.x - 1) * 4;
-	int bottomLeftY = bottomLeft.position.y == 0 ? (int)bottomLeft.position.y * 4 : ((int)bottomLeft.position.y - 1) * 4;
-	int topRightX = topRight.position.x * 4 >= mWidth ? (int)topRight.position.x * 4 : ((int)topRight.position.x + 1) * 4;
-	int topRightY = topRight.position.y * 4 >= mWidth ? (int)topRight.position.y * 4 : ((int)topRight.position.y + 1) * 4;
+	int bottomLeftX = bottomLeft.position.x == 0 ? (int)bottomLeft.position.x: (int)bottomLeft.position.x - 1;
+	int bottomLeftY = bottomLeft.position.y == 0 ? (int)bottomLeft.position.y : (int)bottomLeft.position.y - 1;
+	int topRightX = topRight.position.x >= mWidth ? (int)topRight.position.x : (int)topRight.position.x + 1;
+	int topRightY = topRight.position.y >= mWidth ? (int)topRight.position.y : (int)topRight.position.y + 1;
 
-	for (int y = bottomLeftY; y <= topRightY; y += 4) {
-		for (int x = bottomLeftX; x <= topRightX; x += 4) {
+	for (int y = bottomLeftY; y <= topRightY; ++y) {
+		for (int x = bottomLeftX; x <= topRightX; ++x) {
 			float z = maImage[x + y * mWidth] * mHeightScale;
 
 			if (z > max) max = z;
@@ -551,80 +143,23 @@ XMFLOAT2 Terrain::CalcZBounds(Vertex bottomLeft, Vertex topRight) {
 	return XMFLOAT2(min, max);
 }
 
-// loads the heightmap texture into memory
-void Terrain::PrepareHeightmap(Graphics *GFX) {
-	D3D12_RESOURCE_DESC					texDesc = {};
-	D3D12_SUBRESOURCE_DATA				texData = {};
-	D3D12_SHADER_RESOURCE_VIEW_DESC		srvDesc = {};
-
-	LoadHeightMap("heightmap6.png", "hm6normalmap.png");
-
-	// create the texture.
-	texDesc.MipLevels = 1;
-	texDesc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT; // DXGI_FORMAT_R8G8B8A8_UNORM;
-	texDesc.Width = mWidth;
-	texDesc.Height = mHeight;
-	texDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
-	texDesc.DepthOrArraySize = 1;
-	texDesc.SampleDesc.Count = 1;
-	texDesc.SampleDesc.Quality = 0;
-	texDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-
-	// create shader resource view for the heightmap.
-	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	srvDesc.Format = texDesc.Format;
-	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-	srvDesc.Texture2D.MipLevels = texDesc.MipLevels;
-
-	texData.pData = maImage;
-	texData.RowPitch = mWidth * 4 * 4;
-	texData.SlicePitch = mHeight * mWidth * 4 * 4;
-	
-	GFX->CreateCommittedBuffer(mpHeightmap, mpUploadHeightmap, &texDesc);
-	// copy the data to the upload heap.
-	const unsigned int subresourceCount = texDesc.DepthOrArraySize * texDesc.MipLevels;
-	
-	ID3D12GraphicsCommandList *cmdList = GFX->GetCommandList();
-	UpdateSubresources(cmdList, mpHeightmap, mpUploadHeightmap, 0, 0, subresourceCount, &texData);
-	cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(mpHeightmap, D3D12_RESOURCE_STATE_COPY_DEST, 
-							 D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
-
-	GFX->CreateSRV(mpHeightmap, &srvDesc, mpSRVHeap->GetCPUDescriptorHandleForHeapStart());
-	mpHeightmap->SetName(L"Heightmap Resource Heap");
-	mpUploadHeightmap->SetName(L"Heightmap Upload Resource Heap");
-}
-
 // load the specified file containing the heightmap data.
-void Terrain::LoadHeightMap(const char* fnHeightMap, const char* fnNormalMap) {
+void Terrain::LoadHeightMap(const char* fnHeightMap) {
 	// load the black and white heightmap png file. Data is RGBA unsigned char.
 	unsigned char* tmpHeightMap;
-	unsigned error = lodepng_decode32_file(&tmpHeightMap, &mWidth, &mHeight, fnHeightMap);
+	unsigned error = lodepng_decode32_file(&tmpHeightMap, &mWidth, &mDepth, fnHeightMap);
 	if (error) {
 		throw GFX_Exception("Error loading terrain heightmap texture.");
 	}
-	// load the RGBA normal map png file.
-	unsigned char* tmpNormalMap;
-	unsigned int width, height;
-	error = lodepng_decode32_file(&tmpNormalMap, &width, &height, fnNormalMap);
-	if (error) {
-		throw GFX_Exception("Error loading terrain normalmap texture.");
-	}
-	if (width != mWidth || height != mHeight) {
-		throw GFX_Exception("Terrain normal map size does not match height map size.");
-	}
 
 	// Convert the height values to a float.
-	maImage = new float[mWidth * mHeight * 4]; // one slot for the height and 3 for the normal at the point.
+	maImage = new float[mWidth * mDepth]; // one slot for the height and 3 for the normal at the point.
 	// in this first loop, just copy the height value. We're going to scale it here as well.
-	for (unsigned int i = 0; i < mWidth * mHeight * 4; i += 4) {
+	for (unsigned int i = 0; i < mWidth * mDepth; ++i) {
 		// convert values to float between 0 and 1.
-		// store height in x component, normal in yzw components
-		maImage[i] = (float)tmpHeightMap[i] / 255.0f;
-		maImage[i + 1] = (float)tmpNormalMap[i] / 255.0f;
-		maImage[i + 2] = (float)tmpNormalMap[i + 1] / 255.0f;
-		maImage[i + 3] = (float)tmpNormalMap[i + 2] / 255.0f;
+		// store height value as a floating point value between 0 and 1.
+		maImage[i] = (float)tmpHeightMap[i * 4] / 255.0f;
 	}
 	// we don't need the original data anymore.
 	delete[] tmpHeightMap; 
-	delete[] tmpNormalMap;
 }

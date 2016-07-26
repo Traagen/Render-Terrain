@@ -1,22 +1,25 @@
-cbuffer ConstantBuffer : register(b0)
+cbuffer PerFrameData : register(b0)
 {
 	float4x4 viewproj;
 	float4 eye;
 	float4 frustum[6];
-	float scale;
-	int height;
-	int width;
 }
 
-Texture2D<float4> heightmap : register(t0);
+cbuffer TerrainData : register(b1)
+{
+	float scale;
+	float width;
+	float depth;
+}
+
+Texture2D<float> heightmap : register(t0);
 SamplerState hmsampler : register(s0);
 SamplerState detailsampler : register(s2);
 
-struct VS_OUTPUT
+struct DS_OUTPUT
 {
 	float4 pos : SV_POSITION;
 	float3 worldpos : POSITION;
-  //  float3 norm : NORMAL;
     float2 tex : TEXCOORD;
 };
 
@@ -67,7 +70,7 @@ float4 main(VS_OUTPUT input) : SV_Target
 // code originally presented by Christian Schuler
 // http://www.thetenthplanet.de/archives/1180
 // converted from his glsl to hlsl
-float3x3 cotangent_frame(float3 N, float3 p, float2 uv) {
+/*float3x3 cotangent_frame(float3 N, float3 p, float2 uv) {
 	// get edge vectors of the pixel triangle
 	float3 dp1 = ddx(p);
 	float3 dp2 = ddy(p);
@@ -88,11 +91,11 @@ float3x3 cotangent_frame(float3 N, float3 p, float2 uv) {
 float3 perturb_normal(float3 N, float3 V, float2 texcoord) {
 	// assume N, the interpolated vertex normal and
 	// V, the view vector (vertex to eye)
-	float3 map = 2.0f * heightmap.Sample(detailsampler, texcoord).yzw - 1.0f;
+	//float3 map = 2.0f * heightmap.Sample(detailsampler, texcoord).yzw - 1.0f;
 	map.z *= 5.0f;
 	float3x3 TBN = cotangent_frame(N, -V, texcoord);
 	return normalize(mul(map, TBN));
-}
+}*/
 
 float3 estimateNormal(float2 texcoord) {
 	/*float2 leftTex = texcoord + float2(-1.0f / (float)width, 0.0f);
@@ -107,23 +110,23 @@ float3 estimateNormal(float2 texcoord) {
 
 	return normalize(float3(leftZ - rightZ, topZ - bottomZ, 1.0f));*/
 
-	float2 b = texcoord + float2(0.0f, -0.3f / (float)height);
-	float2 c = texcoord + float2(0.3f / (float)width, -0.3f / (float)height);
-	float2 d = texcoord + float2(0.3f / (float)width, 0.0f);
-	float2 e = texcoord + float2(0.3f / (float)width, 0.3f / (float)height);
-	float2 f = texcoord + float2(0.0f, 0.3f / (float)height);
-	float2 g = texcoord + float2(-0.3f / (float)width, 0.3f / (float)height);
-	float2 h = texcoord + float2(-0.3f / (float)width, 0.0f);
-	float2 i = texcoord + float2(-0.3f / (float)width, -0.3f / (float)height);
+	float2 b = texcoord + float2(0.0f, -0.3f / depth);
+	float2 c = texcoord + float2(0.3f / width, -0.3f / depth);
+	float2 d = texcoord + float2(0.3f / width, 0.0f);
+	float2 e = texcoord + float2(0.3f / width, 0.3f / depth);
+	float2 f = texcoord + float2(0.0f, 0.3f / depth);
+	float2 g = texcoord + float2(-0.3f / width, 0.3f / depth);
+	float2 h = texcoord + float2(-0.3f / width, 0.0f);
+	float2 i = texcoord + float2(-0.3f / width, -0.3f / depth);
 
-	float zb = heightmap.SampleLevel(hmsampler, b, 0).r * scale;
-	float zc = heightmap.SampleLevel(hmsampler, c, 0).r * scale;
-	float zd = heightmap.SampleLevel(hmsampler, d, 0).r * scale;
-	float ze = heightmap.SampleLevel(hmsampler, e, 0).r * scale;
-	float zf = heightmap.SampleLevel(hmsampler, f, 0).r * scale;
-	float zg = heightmap.SampleLevel(hmsampler, g, 0).r * scale;
-	float zh = heightmap.SampleLevel(hmsampler, h, 0).r * scale;
-	float zi = heightmap.SampleLevel(hmsampler, i, 0).r * scale;
+	float zb = heightmap.SampleLevel(hmsampler, b, 0) * scale;
+	float zc = heightmap.SampleLevel(hmsampler, c, 0) * scale;
+	float zd = heightmap.SampleLevel(hmsampler, d, 0) * scale;
+	float ze = heightmap.SampleLevel(hmsampler, e, 0) * scale;
+	float zf = heightmap.SampleLevel(hmsampler, f, 0) * scale;
+	float zg = heightmap.SampleLevel(hmsampler, g, 0) * scale;
+	float zh = heightmap.SampleLevel(hmsampler, h, 0) * scale;
+	float zi = heightmap.SampleLevel(hmsampler, i, 0) * scale;
 
 	float x = zg + 2 * zh + zi - zc - 2 * zd - ze;
 	float y = 2 * zb + zc + zi - ze - 2 * zf - zg;
@@ -133,7 +136,7 @@ float3 estimateNormal(float2 texcoord) {
 }
 
 // basic diffuse/ambient lighting
-float4 main(VS_OUTPUT input) : SV_TARGET
+float4 main(DS_OUTPUT input) : SV_TARGET
 {
 //    return heightmap.Sample(hmsampler, input.tex);
     float4 light = normalize(float4(1.0f, 1.0f, -2.0f, 1.0f));

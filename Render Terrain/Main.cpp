@@ -45,7 +45,6 @@ static void KeyDown(UINT key) {
 		case _Z:
 		case _1:
 		case _2:
-		case _3:
 			pScene->HandleKeyboardInput(key);
 			break;
 	}

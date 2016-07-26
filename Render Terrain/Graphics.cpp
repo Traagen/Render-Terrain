@@ -2,7 +2,7 @@
 Graphics.cpp
 
 Author:			Chris Serson
-Last Edited:	July 2, 2016
+Last Edited:	July 26, 2016
 
 Description:	Class for creating and managing a Direct3D 12 instance.
 */
@@ -293,7 +293,8 @@ namespace graphics {
 		mpDev->CreateConstantBufferView(desc, handle);
 	}
 
-	void Graphics::CreateBuffer(ID3D12Resource*& buffer, D3D12_RESOURCE_DESC* texDesc) {
+	// Create an upload buffer, ready for mapping.
+	void Graphics::CreateUploadBuffer(ID3D12Resource*& buffer, D3D12_RESOURCE_DESC* texDesc) {
 		if (FAILED(mpDev->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD), D3D12_HEAP_FLAG_NONE,
 			texDesc,
 			D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&buffer)))) {
@@ -301,20 +302,21 @@ namespace graphics {
 		}
 	}
 
-	// Create a committed default buffer and an upload buffer for copying data to it.
-	void Graphics::CreateCommittedBuffer(ID3D12Resource*& buffer, ID3D12Resource*&upload, D3D12_RESOURCE_DESC* texDesc) {
+	// Create a default buffer, preconfigured as a copy destination
+	void Graphics::CreateDefaultBuffer(ID3D12Resource*& buffer, D3D12_RESOURCE_DESC* texDesc) {
 		// Create the resource heap on the gpu.
 		if (FAILED(mpDev->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT), D3D12_HEAP_FLAG_NONE, texDesc,
 			D3D12_RESOURCE_STATE_COPY_DEST, NULL, IID_PPV_ARGS(&buffer)))) {
 			throw GFX_Exception("Failed to create default heap on CreateSRV.");
 		}
+	}
 
-		// Create an upload heap.
-		const auto buffSize = GetRequiredIntermediateSize(buffer, 0, 1);
-		if (FAILED(mpDev->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD), D3D12_HEAP_FLAG_NONE,
-			&CD3DX12_RESOURCE_DESC::Buffer(buffSize), D3D12_RESOURCE_STATE_GENERIC_READ,
-			NULL, IID_PPV_ARGS(&upload)))) {
-			throw GFX_Exception("Failed to create upload heap on CreateSRV.");
+	// Create a commited resource. More general version of CreateUploadBuffer and CreateDefaultBuffer. Still needs work/testing.
+	void Graphics::CreateCommittedResource(ID3D12Resource*& heap, D3D12_RESOURCE_DESC* descTex,
+		D3D12_HEAP_PROPERTIES* propHeap, D3D12_HEAP_FLAGS flags,
+		D3D12_RESOURCE_STATES state, D3D12_CLEAR_VALUE* clear) {
+		if (FAILED(mpDev->CreateCommittedResource(propHeap, flags, descTex, state, clear, IID_PPV_ARGS(&heap)))) {
+			throw GFX_Exception("Failed to create committed resource.");
 		}
 	}
 
@@ -422,8 +424,13 @@ namespace graphics {
 		mpCmdQ->ExecuteCommandLists(__crt_countof(lCmds), lCmds);
 
 		// swap the back buffers.
-		if (FAILED(mpSwapChain->Present(0, 0))) {
+	/*	if (FAILED(mpSwapChain->Present(0, 0))) {
 			throw GFX_Exception("SwapChain Present failed on Render.");
+		}*/
+		HRESULT hr = mpSwapChain->Present(0, 0);
+		if (FAILED(hr)) {
+			hr = mpDev->GetDeviceRemovedReason();
+			throw GFX_Exception("failed");
 		}
 	}
 

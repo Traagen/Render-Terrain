@@ -67,12 +67,6 @@
     <FxCompile Include="RenderTerrain2dVS.hlsl">
       <Filter>Resource Files</Filter>
     </FxCompile>
-    <FxCompile Include="RenderTerrain3dPS.hlsl">
-      <Filter>Resource Files</Filter>
-    </FxCompile>
-    <FxCompile Include="RenderTerrain3dVS.hlsl">
-      <Filter>Resource Files</Filter>
-    </FxCompile>
     <FxCompile Include="RenderTerrainTessHS.hlsl">
       <Filter>Resource Files</Filter>
     </FxCompile>

@@ -2,7 +2,7 @@
 Camera.cpp
 
 Author:			Chris Serson
-Last Edited:	July 1, 2016
+Last Edited:	July 18, 2016
 
 Description:	Class for creating and controlling the camera
 */
