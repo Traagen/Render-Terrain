@@ -115,7 +115,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE prevInstance, PSTR cmdLine, int
 				return 1;
 			}
 
-			S.Draw();
+			S.Update();
 		}
 
 		pScene = nullptr;

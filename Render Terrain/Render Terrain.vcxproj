@@ -155,7 +155,10 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Camera.cpp" />
+    <ClCompile Include="DayNightCycle.cpp" />
+    <ClCompile Include="DirectionalLight.cpp" />
     <ClCompile Include="Graphics.cpp" />
+    <ClCompile Include="Light.cpp" />
     <ClCompile Include="lodepng.cpp" />
     <ClCompile Include="Main.cpp" />
     <ClCompile Include="Scene.cpp" />
@@ -165,7 +168,10 @@
   <ItemGroup>
     <ClInclude Include="Camera.h" />
     <ClInclude Include="D3DX12.h" />
+    <ClInclude Include="DayNightCycle.h" />
+    <ClInclude Include="DirectionalLight.h" />
     <ClInclude Include="Graphics.h" />
+    <ClInclude Include="Light.h" />
     <ClInclude Include="lodepng.h" />
     <ClInclude Include="Scene.h" />
     <ClInclude Include="Terrain.h" />

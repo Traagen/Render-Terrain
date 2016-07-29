@@ -8,7 +8,7 @@ Description:	Class for creating, managing, and rendering a scene.
 */
 #include "Scene.h"
 
-Scene::Scene(int height, int width, Graphics* GFX) : T(), C(height, width) {
+Scene::Scene(int height, int width, Graphics* GFX) : T(), C(height, width), DNC(1440) {
 	mpGFX = GFX;
 	mDrawMode = 0;
 
@@ -64,7 +64,7 @@ Scene::~Scene() {
 	}
 
 	while (!mlDescriptorHeaps.empty()) {
-		ID3D12DescriptorHeap* heap = mlDescriptorHeaps.back().heap;
+		ID3D12DescriptorHeap* heap = mlDescriptorHeaps.back();
 
 		if (heap) heap->Release();
 
@@ -99,18 +99,19 @@ void Scene::CleanupTemporaryBuffers() {
 	}
 }
 
-// Initialize a SRV/CBV heap. Currently hard-coded for 2 descriptors, the per-frame constant buffer and the terrain's heightmap texture.
+// Initialize a SRV/CBV heap. Currently hard-coded for 3 descriptors, the per-frame constant buffer, shader constants, and the terrain's heightmap texture.
 void Scene::InitSRVCBVHeap() {
 	D3D12_DESCRIPTOR_HEAP_DESC descCBVSRVHeap = {};
 
 	// create the SRV heap that points at the heightmap and CBV.
-	descCBVSRVHeap.NumDescriptors = 2;
+	descCBVSRVHeap.NumDescriptors = 3;
 	descCBVSRVHeap.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	descCBVSRVHeap.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 	ID3D12DescriptorHeap* heap;
 	mpGFX->CreateDescriptorHeap(&descCBVSRVHeap, heap);
 	heap->SetName(L"CBV/SRV Heap");
-	mlDescriptorHeaps.push_back(DescriptorHeap(heap, mpGFX->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV)));
+	mlDescriptorHeaps.push_back(heap);
+	msizeofDescHeapIncrement = mpGFX->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 }
 
 // Initialize the per-frame constant buffer.
@@ -125,7 +126,7 @@ void Scene::InitPerFrameConstantBuffer() {
 	descCBV.BufferLocation = mpPerFrameConstants->GetGPUVirtualAddress();
 	descCBV.SizeInBytes = (sizeofBuffer + 255) & ~255; // CB size is required to be 256-byte aligned.
 
-	CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(mlDescriptorHeaps[0].heap->GetCPUDescriptorHandleForHeapStart(), 0, mlDescriptorHeaps[0].sizeofIncrement);
+	CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(mlDescriptorHeaps[0]->GetCPUDescriptorHandleForHeapStart(), 0, msizeofDescHeapIncrement);
 
 	mpGFX->CreateCBV(&descCBV, srvHandle);
 
@@ -197,7 +198,7 @@ void Scene::InitPipelineTerrain3D() {
 	// set up the Root Signature.
 	// create a descriptor table with 2 entries for the descriptor heap containing our SRV to the heightmap and our CBV.
 	CD3DX12_ROOT_PARAMETER paramsRoot[3];
-	CD3DX12_DESCRIPTOR_RANGE rangesRoot[2];
+	CD3DX12_DESCRIPTOR_RANGE rangesRoot[3];
 
 
 	// initialize a slot for the heightmap
@@ -209,8 +210,9 @@ void Scene::InitPipelineTerrain3D() {
 	paramsRoot[1].InitAsDescriptorTable(1, &rangesRoot[1]);
 
 	// set root constants descriptor
-	paramsRoot[2].InitAsConstants(3, 1);
-
+	rangesRoot[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 1);
+	paramsRoot[2].InitAsDescriptorTable(1, &rangesRoot[2]);
+	
 	// create our texture samplers for the heightmap.
 	CD3DX12_STATIC_SAMPLER_DESC	descSamplers[3];
 	descSamplers[0].Init(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
@@ -280,6 +282,7 @@ void Scene::InitPipelineTerrain3D() {
 }
 
 // Initialize all of the resources needed by the terrain: heightmap texture, vertex buffer, index buffer.
+// Also initializes shader specific constants that don't need to change.
 void Scene::InitTerrainResources() {
 	// our terrain consists of a heightmap texture, a vertex buffer, and an index buffer.
 	// Create buffers for each.
@@ -288,6 +291,7 @@ void Scene::InitTerrainResources() {
 	UINT depth = T.GetHeightMapDepth();
 	size_t sizeofVertexBuffer = T.GetSizeOfVertexBuffer();
 	size_t sizeofIndexBuffer = T.GetSizeOfIndexBuffer();
+	size_t sizeofConstantBuffer = sizeof(TerrainShaderConstants);
 
 	// Create the heightmap texture buffer.
 	D3D12_RESOURCE_DESC	descTex = {};
@@ -336,12 +340,23 @@ void Scene::InitTerrainResources() {
 	dataIB.RowPitch = sizeofIndexBuffer;
 	dataIB.SlicePitch = sizeofIndexBuffer;
 
+	// Create the constant buffer
+	ID3D12Resource* constantbuffer;
+	mpGFX->CreateDefaultBuffer(constantbuffer, &CD3DX12_RESOURCE_DESC::Buffer(sizeofConstantBuffer));
+	constantbuffer->SetName(L"Terrain shader constant buffer");
+
+	// prepare constant buffer data for upload.
+	D3D12_SUBRESOURCE_DATA dataCB = {};
+	dataCB.pData = &TerrainShaderConstants(T.GetScale(), (float)T.GetHeightMapWidth(), (float)T.GetHeightMapDepth());
+	dataCB.RowPitch = GetRequiredIntermediateSize(constantbuffer, 0, 1);
+	dataCB.SlicePitch = dataCB.RowPitch;
+
 	// attempt to create 1 upload buffer to upload all three.
 	// if that fails, we'll attempt to create separate upload buffers for each.
 	ID3D12GraphicsCommandList *cmdList = mpGFX->GetCommandList();
 	try {
 		ID3D12Resource* upload;
-		mpGFX->CreateUploadBuffer(upload, &CD3DX12_RESOURCE_DESC::Buffer(sizeofHeightmap + sizeofVertexBuffer + sizeofIndexBuffer));
+		mpGFX->CreateUploadBuffer(upload, &CD3DX12_RESOURCE_DESC::Buffer(sizeofHeightmap + sizeofVertexBuffer + sizeofIndexBuffer + sizeofConstantBuffer));
 		mlTemporaryUploadBuffers.push_back(upload);
 
 		// upload heightmap data
@@ -352,15 +367,20 @@ void Scene::InitTerrainResources() {
 
 		// upload index buffer data
 		UpdateSubresources(cmdList, indexbuffer, upload, sizeofHeightmap + sizeofVertexBuffer, 0, 1, &dataIB);
+
+		// upload the constant buffer data
+		UpdateSubresources(cmdList, constantbuffer, upload, sizeofHeightmap + sizeofVertexBuffer + sizeofIndexBuffer, 0, 1, &dataCB);
 	} catch (GFX_Exception e) {
-		// create 3 separate upload buffers
-		ID3D12Resource *uploadHeightmap, *uploadVB, *uploadIB;
+		// create 4 separate upload buffers
+		ID3D12Resource *uploadHeightmap, *uploadVB, *uploadIB, *uploadCB;
 		mpGFX->CreateUploadBuffer(uploadHeightmap, &CD3DX12_RESOURCE_DESC::Buffer(sizeofHeightmap));
 		mpGFX->CreateUploadBuffer(uploadVB, &CD3DX12_RESOURCE_DESC::Buffer(sizeofVertexBuffer));
 		mpGFX->CreateUploadBuffer(uploadIB, &CD3DX12_RESOURCE_DESC::Buffer(sizeofIndexBuffer));
+		mpGFX->CreateUploadBuffer(uploadCB, &CD3DX12_RESOURCE_DESC::Buffer(sizeofConstantBuffer));
 		mlTemporaryUploadBuffers.push_back(uploadHeightmap);
 		mlTemporaryUploadBuffers.push_back(uploadVB);
 		mlTemporaryUploadBuffers.push_back(uploadIB);
+		mlTemporaryUploadBuffers.push_back(uploadCB);
 
 		// upload heightmap data
 		UpdateSubresources(cmdList, heightmap, uploadHeightmap, 0, 0, 1, &dataTex);
@@ -370,6 +390,9 @@ void Scene::InitTerrainResources() {
 
 		// upload index buffer data
 		UpdateSubresources(cmdList, indexbuffer, uploadIB, 0, 0, 1, &dataIB);
+
+		// upload constant buffer data
+		UpdateSubresources(cmdList, constantbuffer, uploadCB, 0, 0, 1, &dataCB);
 	}
 
 	// set resource barriers to inform GPU that data is ready for use.
@@ -379,6 +402,8 @@ void Scene::InitTerrainResources() {
 		D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER));
 	cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(indexbuffer, D3D12_RESOURCE_STATE_COPY_DEST,
 		D3D12_RESOURCE_STATE_INDEX_BUFFER));
+	cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(constantbuffer, D3D12_RESOURCE_STATE_COPY_DEST,
+		D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER));
 
 	// create and save vertex buffer view to Terrain object.
 	D3D12_VERTEX_BUFFER_VIEW bvVertex;
@@ -403,9 +428,17 @@ void Scene::InitTerrainResources() {
 	descSRV.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 	descSRV.Texture2D.MipLevels = descTex.MipLevels;
 	
-	CD3DX12_CPU_DESCRIPTOR_HANDLE handleSRV(mlDescriptorHeaps[0].heap->GetCPUDescriptorHandleForHeapStart(), 1, mlDescriptorHeaps[0].sizeofIncrement);
+	CD3DX12_CPU_DESCRIPTOR_HANDLE handleSRV(mlDescriptorHeaps[0]->GetCPUDescriptorHandleForHeapStart(), 1, msizeofDescHeapIncrement);
 	mpGFX->CreateSRV(heightmap, &descSRV, handleSRV);
 	T.SetHeightmapResource(heightmap);
+
+	// Create a constant buffer view.
+	D3D12_CONSTANT_BUFFER_VIEW_DESC descCBV = {};
+	descCBV.BufferLocation = constantbuffer->GetGPUVirtualAddress();
+	descCBV.SizeInBytes = (sizeof(TerrainShaderConstants) + 255) & ~255; // CB size is required to be 256-byte aligned.
+	
+	CD3DX12_CPU_DESCRIPTOR_HANDLE handleCBV(mlDescriptorHeaps[0]->GetCPUDescriptorHandleForHeapStart(), 2, msizeofDescHeapIncrement);
+	mpGFX->CreateCBV(&descCBV, handleCBV);
 }
 
 void Scene::SetViewport() {
@@ -418,12 +451,12 @@ void Scene::DrawTerrain(ID3D12GraphicsCommandList* cmdList) {
 	cmdList->SetPipelineState(mlPSOs[mDrawMode]);
 	cmdList->SetGraphicsRootSignature(mlRootSigs[mDrawMode]);
 
-	ID3D12DescriptorHeap* heaps[] = { mlDescriptorHeaps[0].heap };
+	ID3D12DescriptorHeap* heaps[] = { mlDescriptorHeaps[0] };
 	cmdList->SetDescriptorHeaps(_countof(heaps), heaps);
 
 	// set the srv buffer.
-	CD3DX12_GPU_DESCRIPTOR_HANDLE srvHandle(mlDescriptorHeaps[0].heap->GetGPUDescriptorHandleForHeapStart(), 1, mlDescriptorHeaps[0].sizeofIncrement);
-	cmdList->SetGraphicsRootDescriptorTable(0, srvHandle);
+	CD3DX12_GPU_DESCRIPTOR_HANDLE handleSRV(mlDescriptorHeaps[0]->GetGPUDescriptorHandleForHeapStart(), 1, msizeofDescHeapIncrement);
+	cmdList->SetGraphicsRootDescriptorTable(0, handleSRV);
 
 	if (mDrawMode == 1) {
 		// set the per frame constant buffer.
@@ -439,13 +472,14 @@ void Scene::DrawTerrain(ID3D12GraphicsCommandList* cmdList) {
 		constants.frustum[3] = frustum[3];
 		constants.frustum[4] = frustum[4];
 		constants.frustum[5] = frustum[5];
+		constants.light = DNC.GetLight();
 		memcpy(mpPerFrameConstantsMapped, &constants, sizeof(PerFrameConstantBuffer));
 				
-		cmdList->SetGraphicsRootDescriptorTable(1, mlDescriptorHeaps[0].heap->GetGPUDescriptorHandleForHeapStart());
+		cmdList->SetGraphicsRootDescriptorTable(1, mlDescriptorHeaps[0]->GetGPUDescriptorHandleForHeapStart());
 	
 		// set the terrain shader constants
-		TerrainShaderConstants tsc = T.GetShaderConstants();
-		cmdList->SetGraphicsRoot32BitConstants(2, 3, &tsc, 0);
+		CD3DX12_GPU_DESCRIPTOR_HANDLE handleCBV(mlDescriptorHeaps[0]->GetGPUDescriptorHandleForHeapStart(), 2, msizeofDescHeapIncrement);
+		cmdList->SetGraphicsRootDescriptorTable(2, handleCBV);
 	}
 	
 	// mDrawMode = 0/false for 2D rendering and 1/true for 3D rendering
@@ -467,6 +501,12 @@ void Scene::Draw() {
 	mpGFX->SetBackBufferPresent(mpGFX->GetCommandList());
 	CloseCommandLists();
 	mpGFX->Render();
+}
+
+void Scene::Update() {
+	DNC.Update();
+
+	Draw();
 }
 
 // function allowing the main program to pass keyboard input to the scene.

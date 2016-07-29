@@ -31,14 +31,6 @@ struct Vertex {
 	XMFLOAT2 tex;
 };
 
-struct TerrainShaderConstants {
-	float scale;
-	float width;
-	float depth;
-
-	TerrainShaderConstants(float s, float w, float d) : scale(s), width(w), depth(d) {}
-};
-
 class Terrain {
 public:
 	Terrain();
@@ -46,16 +38,16 @@ public:
 
 	void Draw(ID3D12GraphicsCommandList* cmdList, bool Draw3D = true);
 
-	size_t GetSizeOfVertexBuffer() { return mVertexCount * sizeof(Vertex); }
-	size_t GetSizeOfIndexBuffer() { return mIndexCount * sizeof(UINT); }
-	size_t GetSizeOfHeightMap() { return mWidth * mDepth * sizeof(float); }
+	UINT GetSizeOfVertexBuffer() { return mVertexCount * sizeof(Vertex); }
+	UINT GetSizeOfIndexBuffer() { return mIndexCount * sizeof(UINT); }
+	UINT GetSizeOfHeightMap() { return mWidth * mDepth * sizeof(float); }
 	UINT GetHeightMapWidth() { return mWidth; }
 	UINT GetHeightMapDepth() { return mDepth; }
 	float* GetHeightMapTextureData() { return maImage; }
 	Vertex* GetVertexArray() { return maVertices; }
 	UINT* GetIndexArray() { return maIndices; }
-	TerrainShaderConstants GetShaderConstants() { return TerrainShaderConstants(mHeightScale, (float)mWidth, (float)mDepth); }
-
+	float GetScale() { return mHeightScale; }
+	
 	void SetVertexBufferView(D3D12_VERTEX_BUFFER_VIEW vbv) { mVBV = vbv; }
 	void SetIndexBufferView(D3D12_INDEX_BUFFER_VIEW ibv) { mIBV = ibv; }
 	void SetHeightmapResource(ID3D12Resource* tex) { mpHeightmap = tex; }
@@ -84,7 +76,7 @@ private:
 	unsigned long				mVertexCount;
 	unsigned long				mIndexCount;
 	float						mHeightScale;
-	Vertex*						maVertices;			// buffer to contain vertex array prior to upload.
-	UINT*						maIndices;			// buffer to contain index array prior to upload.
+	Vertex*						maVertices;		// buffer to contain vertex array prior to upload.
+	UINT*						maIndices;		// buffer to contain index array prior to upload.
 };
 

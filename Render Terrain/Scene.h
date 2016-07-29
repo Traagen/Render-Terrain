@@ -22,6 +22,7 @@ Future Work:	- Add support for multi-threaded rendering.
 
 #include "Terrain.h"
 #include "Camera.h"
+#include "DayNightCycle.h"
 
 using namespace graphics;
 
@@ -29,17 +30,19 @@ enum InputKeys { _0 = 0x30, _1, _2, _3, _4, _5, _6, _7, _8, _9, _A = 0x41, _B, _
 #define MOVE_STEP 1.0f
 #define ROT_ANGLE 0.75f
 
-struct DescriptorHeap {
-	ID3D12DescriptorHeap* heap;
-	UINT sizeofIncrement;
-
-	DescriptorHeap(ID3D12DescriptorHeap* heap, UINT size) : heap(heap), sizeofIncrement(size) {}
-};
-
 struct PerFrameConstantBuffer {
 	XMFLOAT4X4	viewproj;
 	XMFLOAT4	eye;
 	XMFLOAT4	frustum[6];
+	LightSource light;
+};
+
+struct TerrainShaderConstants {
+	float scale;
+	float width;
+	float depth;
+
+	TerrainShaderConstants(float s, float w, float d) : scale(s), width(w), depth(d) {}
 };
 
 class Scene {
@@ -47,6 +50,7 @@ public:
 	Scene(int height, int width, Graphics* GFX);
 	~Scene();
 
+	void Update();
 	void Draw();
 	// function allowing the main program to pass keyboard input to the scene.
 	void HandleKeyboardInput(UINT key);
@@ -78,12 +82,14 @@ private:
 	Graphics*							mpGFX;
 	Terrain								T;
 	Camera								C;
+	DayNightCycle						DNC;
 	D3D12_VIEWPORT						mViewport;
 	D3D12_RECT							mScissorRect;
 	int									mDrawMode;
+	UINT								msizeofDescHeapIncrement;
 	std::vector<ID3D12RootSignature*>	mlRootSigs;
 	std::vector<ID3D12PipelineState*>	mlPSOs;
-	std::vector<DescriptorHeap>			mlDescriptorHeaps;
+	std::vector<ID3D12DescriptorHeap*>	mlDescriptorHeaps;
 	std::vector<ID3D12Resource*>		mlTemporaryUploadBuffers;
 	ID3D12Resource*						mpPerFrameConstants;
 	PerFrameConstantBuffer*				mpPerFrameConstantsMapped;

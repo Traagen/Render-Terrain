@@ -1,8 +1,20 @@
+struct LightData {
+	float4 pos;
+	float4 amb;
+	float4 dif;
+	float4 spec;
+	float3 att;
+	float rng;
+	float3 dir;
+	float sexp;
+};
+
 cbuffer PerFrameData : register(b0)
 {
 	float4x4 viewproj;
 	float4 eye;
 	float4 frustum[6];
+	LightData light;
 }
 
 cbuffer TerrainData : register(b1)
@@ -139,7 +151,7 @@ float3 estimateNormal(float2 texcoord) {
 float4 main(DS_OUTPUT input) : SV_TARGET
 {
 //    return heightmap.Sample(hmsampler, input.tex);
-    float4 light = normalize(float4(1.0f, 1.0f, -2.0f, 1.0f));
+ //   float4 light = normalize(float4(1.0f, 1.0f, -2.0f, 1.0f));
 
 	//float3 N = normalize(input.norm);
 	//float3 viewvector = eye.xyz - input.worldpos;
@@ -149,11 +161,18 @@ float4 main(DS_OUTPUT input) : SV_TARGET
 //	float3 viewvector = eye.xyz - input.worldpos;
 //	norm = perturb_normal(norm, viewvector, input.tex * 256.0f);
 
-	float4 N = float4(norm, 1.0f);
+	//float4 N = float4(norm, 1.0f);
 	//float4 norm = float4(normalize(input.norm), 1.0f);
-    float diffuse = saturate(dot(N, -light));
-    float ambient = 0.1f;
-    float3 color = float3(0.22f, 0.72f, 0.31f);
+    //float diffuse = saturate(dot(N, -light));
+    //float ambient = 0.1f;
+    float4 color = float4(0.22f, 0.72f, 0.31f, 1.0f);
+
+	float4 ambient = color * light.amb;
+	float4 diffuse = color * light.dif * dot(-light.dir, norm);
+	float3 V = reflect(light.dir, norm);
+	float3 toEye = normalize(eye.xyz - input.worldpos);
+	float4 specular = color * 0.1f * light.spec * pow(max(dot(V, toEye), 0.0f), 1.0f);
+//	float4 specular = float4(0.0f, 0.0f, 0.0f, 1.0f);
 	//float3 color = float3(0.48f, 0.2f, 0.09f);
 	
     /*float slope = 1.0f - input.norm.z;
@@ -195,5 +214,6 @@ float4 main(DS_OUTPUT input) : SV_TARGET
 	}
 	*/
 //	return float4(color, 1.0f);
-    return float4(saturate((color * diffuse) + (color * ambient)), 1.0f);
+    //return float4(saturate((color * diffuse) + (color * ambient)), 1.0f);
+	return saturate(ambient + diffuse + specular);
 }
