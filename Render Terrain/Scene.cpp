@@ -2,15 +2,19 @@
 Scene.cpp
 
 Author:			Chris Serson
-Last Edited:	July 26, 2016
+Last Edited:	August 5, 2016
 
 Description:	Class for creating, managing, and rendering a scene.
 */
 #include "Scene.h"
+#include<stdlib.h>
 
 Scene::Scene(int height, int width, Graphics* GFX) : T(), C(height, width), DNC(1440) {
 	mpGFX = GFX;
 	mDrawMode = 0;
+
+	mpPerFrameConstants = nullptr;
+	mpShadowMap = nullptr;
 
 	// create a viewport and scissor rectangle.
 	mViewport.TopLeftX = 0;
@@ -33,10 +37,15 @@ Scene::Scene(int height, int width, Graphics* GFX) : T(), C(height, width), DNC(
 	InitSRVCBVHeap();
 	InitPerFrameConstantBuffer();
 	InitTerrainResources();
+
+	// Initialize everything needed for the shadow map.
+	InitDSVHeap();
+	InitShadowMap(1024, 1024);
+	InitPipelineShadowMap();
 	
 	// after creating and initializing the heightmap for the terrain, we need to close the command list
 	// and tell the Graphics object to execute the command list to actually finish the subresource init.
-	CloseCommandLists();
+	CloseCommandLists(mpGFX->GetCommandList());
 	mpGFX->LoadAssets();
 
 	CleanupTemporaryBuffers();
@@ -78,13 +87,18 @@ Scene::~Scene() {
 		mpPerFrameConstants = nullptr;
 	}
 
+	if (mpShadowMap) {
+		mpShadowMap->Release();
+		mpShadowMap = nullptr;
+	}
+
 	CleanupTemporaryBuffers();
 }
 
 // Close all command lists. Currently there is only the one.
-void Scene::CloseCommandLists() {
+void Scene::CloseCommandLists(ID3D12GraphicsCommandList* cmdList) {
 	// close the command list.
-	if (FAILED(mpGFX->GetCommandList()->Close())) {
+	if (FAILED(cmdList->Close())) {
 		throw GFX_Exception("CommandList Close failed.");
 	}
 }
@@ -104,14 +118,30 @@ void Scene::InitSRVCBVHeap() {
 	D3D12_DESCRIPTOR_HEAP_DESC descCBVSRVHeap = {};
 
 	// create the SRV heap that points at the heightmap and CBV.
-	descCBVSRVHeap.NumDescriptors = 3;
+	descCBVSRVHeap.NumDescriptors = 4;
 	descCBVSRVHeap.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	descCBVSRVHeap.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+
 	ID3D12DescriptorHeap* heap;
 	mpGFX->CreateDescriptorHeap(&descCBVSRVHeap, heap);
 	heap->SetName(L"CBV/SRV Heap");
 	mlDescriptorHeaps.push_back(heap);
-	msizeofDescHeapIncrement = mpGFX->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	msizeofCBVSRVDescHeapIncrement = mpGFX->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+}
+
+// Initialize a DSV heap. Currently contains the shadow map heap.
+void Scene::InitDSVHeap() {
+	D3D12_DESCRIPTOR_HEAP_DESC descDSVHeap = {};
+	// Each frame has its own depth stencils (to write shadows onto) 
+	// and then there is one for the scene itself.
+	descDSVHeap.NumDescriptors = 1;
+	descDSVHeap.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+	descDSVHeap.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+
+	ID3D12DescriptorHeap* heap;
+	mpGFX->CreateDescriptorHeap(&descDSVHeap, heap);
+	heap->SetName(L"DSV Heap for Shadow Map");
+	mlDescriptorHeaps.push_back(heap);
 }
 
 // Initialize the per-frame constant buffer.
@@ -126,15 +156,12 @@ void Scene::InitPerFrameConstantBuffer() {
 	descCBV.BufferLocation = mpPerFrameConstants->GetGPUVirtualAddress();
 	descCBV.SizeInBytes = (sizeofBuffer + 255) & ~255; // CB size is required to be 256-byte aligned.
 
-	CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(mlDescriptorHeaps[0]->GetCPUDescriptorHandleForHeapStart(), 0, msizeofDescHeapIncrement);
+	CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(mlDescriptorHeaps[0]->GetCPUDescriptorHandleForHeapStart(), 0, msizeofCBVSRVDescHeapIncrement);
 
 	mpGFX->CreateCBV(&descCBV, srvHandle);
 
 	// initialize and map the constant buffers.
 	// per the DirectX 12 sample code, we can leave this mapped until we close.
-//	mpPerFrameConstantsMapped = new PerFrameConstantBuffer;
-//	ZeroMemory(mpPerFrameConstantsMapped, sizeof(PerFrameConstantBuffer));
-
 	CD3DX12_RANGE rangeRead(0, 0); // we won't be reading from this resource
 	if (FAILED(mpPerFrameConstants->Map(0, &rangeRead, reinterpret_cast<void**>(&mpPerFrameConstantsMapped)))) {
 		throw (GFX_Exception("Failed to map Per Frame Constant Buffer."));
@@ -147,7 +174,7 @@ void Scene::InitPipelineTerrain2D() {
 	// create a descriptor table with 1 entry for the descriptor heap containing our SRV to the heightmap.
 	CD3DX12_DESCRIPTOR_RANGE rangeRoot;
 	CD3DX12_ROOT_PARAMETER paramsRoot[1];
-	rangeRoot.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+	rangeRoot.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 0);
 	paramsRoot[0].InitAsDescriptorTable(1, &rangeRoot);
 
 	// create our texture sampler for the heightmap.
@@ -171,20 +198,20 @@ void Scene::InitPipelineTerrain2D() {
 
 	DXGI_SAMPLE_DESC sampleDesc = {};
 	sampleDesc.Count = 1; // turns multi-sampling off. Not supported feature for my card.
-						  // create the pipeline state object
-
+	
+	// create the pipeline state object
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC descPSO = {};
 	descPSO.pRootSignature = sigRoot;
 	descPSO.VS = bcVS;
 	descPSO.PS = bcPS;
 	descPSO.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+	descPSO.NumRenderTargets = 1;
 	descPSO.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
 	descPSO.SampleDesc = sampleDesc;
 	descPSO.SampleMask = UINT_MAX;
 	descPSO.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
 	descPSO.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
 	descPSO.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-	descPSO.NumRenderTargets = 1;
 	descPSO.DepthStencilState.DepthEnable = false;
 	descPSO.DepthStencilState.StencilEnable = false;
 	
@@ -196,23 +223,18 @@ void Scene::InitPipelineTerrain2D() {
 // Initialize the root signature and pipeline state object for rendering the terrain in 3D.
 void Scene::InitPipelineTerrain3D() {
 	// set up the Root Signature.
-	// create a descriptor table with 2 entries for the descriptor heap containing our SRV to the heightmap and our CBV.
-	CD3DX12_ROOT_PARAMETER paramsRoot[3];
-	CD3DX12_DESCRIPTOR_RANGE rangesRoot[3];
-
-
-	// initialize a slot for the heightmap
-	rangesRoot[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+	// create a descriptor table.
+	CD3DX12_ROOT_PARAMETER paramsRoot[2];
+	CD3DX12_DESCRIPTOR_RANGE rangesRoot[2];
+	
+	// initialize a slot for the heightmap and shadowmap
+	rangesRoot[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 0);
 	paramsRoot[0].InitAsDescriptorTable(1, &rangesRoot[0]);
 
-	// create a root parameter for our cbv
-	rangesRoot[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0);
+	// create a root parameter for our per frame constants
+	rangesRoot[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 2, 0);
 	paramsRoot[1].InitAsDescriptorTable(1, &rangesRoot[1]);
 
-	// set root constants descriptor
-	rangesRoot[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 1);
-	paramsRoot[2].InitAsDescriptorTable(1, &rangesRoot[2]);
-	
 	// create our texture samplers for the heightmap.
 	CD3DX12_STATIC_SAMPLER_DESC	descSamplers[3];
 	descSamplers[0].Init(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
@@ -222,7 +244,12 @@ void Scene::InitPipelineTerrain3D() {
 	descSamplers[1].Init(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
 	descSamplers[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_DOMAIN;
 	descSamplers[1].ShaderRegister = 1;
-	descSamplers[2].Init(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
+	descSamplers[2].Init(0, D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT);
+	descSamplers[2].AddressU = D3D12_TEXTURE_ADDRESS_MODE_BORDER; 
+	descSamplers[2].AddressV = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+	descSamplers[2].MaxAnisotropy = 1;
+	descSamplers[2].ComparisonFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+	descSamplers[2].BorderColor = D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK;
 	descSamplers[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 	descSamplers[2].ShaderRegister = 2;
 
@@ -245,9 +272,9 @@ void Scene::InitPipelineTerrain3D() {
 
 	DXGI_SAMPLE_DESC descSample = {};
 	descSample.Count = 1; // turns multi-sampling off. Not supported feature for my card.
-						  // create the pipeline state object
-						  // create input layout.
-
+	
+	// create the pipeline state object
+	// create input layout.
 	D3D12_INPUT_LAYOUT_DESC	descInputLayout = {};
 	D3D12_INPUT_ELEMENT_DESC descElementLayout[] = {
 		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
@@ -266,14 +293,96 @@ void Scene::InitPipelineTerrain3D() {
 	descPSO.HS = bcHS;
 	descPSO.DS = bcDS;
 	descPSO.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_PATCH;
+	descPSO.NumRenderTargets = 1;
 	descPSO.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+	descPSO.DSVFormat = DXGI_FORMAT_D32_FLOAT;
 	descPSO.SampleDesc = descSample;
 	descPSO.SampleMask = UINT_MAX;
 	descPSO.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
 	descPSO.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
 	descPSO.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
 	descPSO.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-	descPSO.NumRenderTargets = 1;
+	descPSO.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+
+	ID3D12PipelineState* pso;
+	mpGFX->CreatePSO(&descPSO, pso);
+	mlPSOs.push_back(pso);
+}
+
+// Initialize the root signature and pipeline state object for rendering to the shadow map.
+void Scene::InitPipelineShadowMap() {
+	// set up the Root Signature.
+	// create a descriptor table with 2 entries for the descriptor heap containing our SRV to the heightmap and our CBV.
+	CD3DX12_ROOT_PARAMETER paramsRoot[2];
+	CD3DX12_DESCRIPTOR_RANGE rangesRoot[2];
+	
+	// initialize a slot for the heightmap
+	rangesRoot[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+	paramsRoot[0].InitAsDescriptorTable(1, &rangesRoot[0]);
+
+	// create a root parameter for our cbv
+	rangesRoot[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 2, 0);
+	paramsRoot[1].InitAsDescriptorTable(1, &rangesRoot[1]);
+
+	// create our texture samplers for the heightmap.
+	CD3DX12_STATIC_SAMPLER_DESC	descSamplers[2];
+	descSamplers[0].Init(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
+	descSamplers[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_DOMAIN;
+	descSamplers[0].AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+	descSamplers[0].AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+	descSamplers[1].Init(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
+	descSamplers[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_DOMAIN;
+	descSamplers[1].ShaderRegister = 1;
+
+	// It isn't really necessary to deny the other shaders access, but it does technically allow the GPU to optimize more.
+	CD3DX12_ROOT_SIGNATURE_DESC	descRoot;
+	descRoot.Init(_countof(paramsRoot), paramsRoot, 2, descSamplers, D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
+		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+	ID3D12RootSignature* sigRoot;
+	mpGFX->CreateRootSig(&descRoot, sigRoot);
+	mlRootSigs.push_back(sigRoot);
+
+	D3D12_SHADER_BYTECODE bcVS = {};
+	D3D12_SHADER_BYTECODE bcHS = {};
+	D3D12_SHADER_BYTECODE bcDS = {};
+	mpGFX->CompileShader(L"RenderTerrainTessVS.hlsl", bcVS, VERTEX_SHADER);
+	mpGFX->CompileShader(L"RenderShadowMapHS.hlsl", bcHS, HULL_SHADER);
+	mpGFX->CompileShader(L"RenderShadowMapDS.hlsl", bcDS, DOMAIN_SHADER);
+
+	DXGI_SAMPLE_DESC descSample = {};
+	descSample.Count = 1; // turns multi-sampling off. Not supported feature for my card.
+						  
+	// create the pipeline state object
+	// create input layout.
+	D3D12_INPUT_LAYOUT_DESC	descInputLayout = {};
+	D3D12_INPUT_ELEMENT_DESC descElementLayout[] = {
+		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "POSITION", 1, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+	};
+
+	descInputLayout.NumElements = sizeof(descElementLayout) / sizeof(D3D12_INPUT_ELEMENT_DESC);
+	descInputLayout.pInputElementDescs = descElementLayout;
+
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC descPSO = {};
+	descPSO.pRootSignature = sigRoot;
+	descPSO.InputLayout = descInputLayout;
+	descPSO.VS = bcVS;
+	descPSO.HS = bcHS;
+	descPSO.DS = bcDS;
+	descPSO.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_PATCH;
+	descPSO.RTVFormats[0] = DXGI_FORMAT_UNKNOWN;
+	descPSO.NumRenderTargets = 0;
+	descPSO.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+	descPSO.SampleDesc = descSample;
+	descPSO.SampleMask = UINT_MAX;
+	descPSO.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+	descPSO.RasterizerState.CullMode = D3D12_CULL_MODE_FRONT;
+	descPSO.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
+	descPSO.RasterizerState.DepthBias = 100;
+	descPSO.RasterizerState.DepthBiasClamp = 0.0f;
+	descPSO.RasterizerState.SlopeScaledDepthBias = 1.5f;
+	descPSO.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
 	descPSO.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
 
 	ID3D12PipelineState* pso;
@@ -421,6 +530,14 @@ void Scene::InitTerrainResources() {
 	T.SetIndexBufferView(bvIndex);
 	T.SetIndexBufferResource(indexbuffer);
 
+	// Create a constant buffer view.
+	D3D12_CONSTANT_BUFFER_VIEW_DESC descCBV = {};
+	descCBV.BufferLocation = constantbuffer->GetGPUVirtualAddress();
+	descCBV.SizeInBytes = (sizeof(TerrainShaderConstants) + 255) & ~255; // CB size is required to be 256-byte aligned.
+
+	CD3DX12_CPU_DESCRIPTOR_HANDLE handleCBV(mlDescriptorHeaps[0]->GetCPUDescriptorHandleForHeapStart(), 1, msizeofCBVSRVDescHeapIncrement);
+	mpGFX->CreateCBV(&descCBV, handleCBV);
+
 	// Create the SRV for the heightmap texture and save to Terrain object.
 	D3D12_SHADER_RESOURCE_VIEW_DESC	descSRV = {};
 	descSRV.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
@@ -428,23 +545,122 @@ void Scene::InitTerrainResources() {
 	descSRV.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 	descSRV.Texture2D.MipLevels = descTex.MipLevels;
 	
-	CD3DX12_CPU_DESCRIPTOR_HANDLE handleSRV(mlDescriptorHeaps[0]->GetCPUDescriptorHandleForHeapStart(), 1, msizeofDescHeapIncrement);
+	CD3DX12_CPU_DESCRIPTOR_HANDLE handleSRV(mlDescriptorHeaps[0]->GetCPUDescriptorHandleForHeapStart(), 2, msizeofCBVSRVDescHeapIncrement);
 	mpGFX->CreateSRV(heightmap, &descSRV, handleSRV);
 	T.SetHeightmapResource(heightmap);
-
-	// Create a constant buffer view.
-	D3D12_CONSTANT_BUFFER_VIEW_DESC descCBV = {};
-	descCBV.BufferLocation = constantbuffer->GetGPUVirtualAddress();
-	descCBV.SizeInBytes = (sizeof(TerrainShaderConstants) + 255) & ~255; // CB size is required to be 256-byte aligned.
-	
-	CD3DX12_CPU_DESCRIPTOR_HANDLE handleCBV(mlDescriptorHeaps[0]->GetCPUDescriptorHandleForHeapStart(), 2, msizeofDescHeapIncrement);
-	mpGFX->CreateCBV(&descCBV, handleCBV);
 }
 
-void Scene::SetViewport() {
-	ID3D12GraphicsCommandList* cmdList = mpGFX->GetCommandList();
+void Scene::InitShadowMap(UINT width, UINT height) {
+	// create a viewport and scissor rectangle as the shadow map is likely of different dimensions than our normal view.
+	mShadowMapViewport.TopLeftX = 0;
+	mShadowMapViewport.TopLeftY = 0;
+	mShadowMapViewport.Width = (float)width;
+	mShadowMapViewport.Height = (float)height;
+	mShadowMapViewport.MinDepth = 0;
+	mShadowMapViewport.MaxDepth = 1;
+
+	mShadowMapScissorRect.left = 0;
+	mShadowMapScissorRect.top = 0;
+	mShadowMapScissorRect.right = width;
+	mShadowMapScissorRect.bottom = height;
+
+	// Create the shadow map texture buffer.
+	D3D12_RESOURCE_DESC	descTex = {};
+	descTex.Alignment = 0;
+	descTex.MipLevels = 1;
+	descTex.Format = DXGI_FORMAT_R24G8_TYPELESS;
+	descTex.Width = width;
+	descTex.Height = height;
+	descTex.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+	descTex.DepthOrArraySize = 1;
+	descTex.SampleDesc.Count = 1;
+	descTex.SampleDesc.Quality = 0;
+	descTex.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+	descTex.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+	
+	D3D12_CLEAR_VALUE clearValue;	// Performance tip: Tell the runtime at resource creation the desired clear value. (per microsoft examples)
+	clearValue.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+	clearValue.DepthStencil.Depth = 1.0f;
+	clearValue.DepthStencil.Stencil = 0;
+
+	mpGFX->CreateCommittedResource(mpShadowMap, &descTex, &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT), D3D12_HEAP_FLAG_NONE, 
+		D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, &clearValue);
+	mpShadowMap->SetName(L"Shadow Map Texture Buffer");
+	
+	D3D12_DEPTH_STENCIL_VIEW_DESC descDSV = {};
+	descDSV.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+	descDSV.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+	descDSV.Texture2D.MipSlice = 0;
+	descDSV.Flags = D3D12_DSV_FLAG_NONE;
+	
+	mpGFX->CreateDSV(mpShadowMap, &descDSV, mlDescriptorHeaps[1]->GetCPUDescriptorHandleForHeapStart());
+
+	// Create the SRV for the heightmap texture and save to Terrain object.
+	D3D12_SHADER_RESOURCE_VIEW_DESC	descSRV = {};
+	descSRV.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	descSRV.Format = DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
+	descSRV.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	descSRV.Texture2D.MipLevels = descTex.MipLevels;
+	descSRV.Texture2D.MostDetailedMip = 0;
+	descSRV.Texture2D.ResourceMinLODClamp = 0.0f;
+	descSRV.Texture2D.PlaneSlice = 0;
+
+	CD3DX12_CPU_DESCRIPTOR_HANDLE handleSRV(mlDescriptorHeaps[0]->GetCPUDescriptorHandleForHeapStart(), 3, msizeofCBVSRVDescHeapIncrement);
+	mpGFX->CreateSRV(mpShadowMap, &descSRV, handleSRV);
+}
+
+void Scene::SetViewport(ID3D12GraphicsCommandList* cmdList) {
 	cmdList->RSSetViewports(1, &mViewport);
 	cmdList->RSSetScissorRects(1, &mScissorRect);
+}
+
+// set shadow map viewport/scissor rect, set null rtv, set our shadow map dsv
+void Scene::SetShadowMapRender(ID3D12GraphicsCommandList* cmdList) {
+	cmdList->RSSetViewports(1, &mShadowMapViewport);
+	cmdList->RSSetScissorRects(1, &mShadowMapScissorRect);
+
+	cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(mpShadowMap, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_DEPTH_WRITE));
+
+	cmdList->ClearDepthStencilView(mlDescriptorHeaps[1]->GetCPUDescriptorHandleForHeapStart(), D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+	cmdList->OMSetRenderTargets(0, nullptr, false, &mlDescriptorHeaps[1]->GetCPUDescriptorHandleForHeapStart());
+}
+
+void Scene::DrawShadowMap(ID3D12GraphicsCommandList* cmdList) {
+	cmdList->SetPipelineState(mlPSOs[2]);
+	cmdList->SetGraphicsRootSignature(mlRootSigs[2]);
+
+	ID3D12DescriptorHeap* heaps[] = { mlDescriptorHeaps[0] };
+	cmdList->SetDescriptorHeaps(_countof(heaps), heaps);
+
+	// set the srv buffer.
+	CD3DX12_GPU_DESCRIPTOR_HANDLE handleSRV(mlDescriptorHeaps[0]->GetGPUDescriptorHandleForHeapStart(), 2, msizeofCBVSRVDescHeapIncrement);
+	cmdList->SetGraphicsRootDescriptorTable(0, handleSRV);
+
+	// set the per frame constant buffer.
+	XMFLOAT4 frustum[6];
+	C.GetViewFrustum(frustum);
+
+	PerFrameConstantBuffer constants;
+	float h = T.GetHeightMapDepth() / 2.0f;
+	float w = T.GetHeightMapWidth() / 2.0f;
+	constants.viewproj = C.GetViewProjectionMatrixTransposed();
+	constants.shadowviewproj = DNC.GetShadowViewProjectionMatrixTransposed(XMFLOAT3(w, h, 0.0f), sqrtf(w * w + h * h));
+	constants.eye = C.GetEyePosition();
+	constants.frustum[0] = frustum[0];
+	constants.frustum[1] = frustum[1];
+	constants.frustum[2] = frustum[2];
+	constants.frustum[3] = frustum[3];
+	constants.frustum[4] = frustum[4];
+	constants.frustum[5] = frustum[5];
+	constants.light = DNC.GetLight();
+	memcpy(mpPerFrameConstantsMapped, &constants, sizeof(PerFrameConstantBuffer));
+
+	cmdList->SetGraphicsRootDescriptorTable(1, mlDescriptorHeaps[0]->GetGPUDescriptorHandleForHeapStart());
+
+	// mDrawMode = 0/false for 2D rendering and 1/true for 3D rendering
+	T.Draw(cmdList, true);
+
+	cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(mpShadowMap, D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE));
 }
 
 void Scene::DrawTerrain(ID3D12GraphicsCommandList* cmdList) {
@@ -454,17 +670,21 @@ void Scene::DrawTerrain(ID3D12GraphicsCommandList* cmdList) {
 	ID3D12DescriptorHeap* heaps[] = { mlDescriptorHeaps[0] };
 	cmdList->SetDescriptorHeaps(_countof(heaps), heaps);
 
-	// set the srv buffer.
-	CD3DX12_GPU_DESCRIPTOR_HANDLE handleSRV(mlDescriptorHeaps[0]->GetGPUDescriptorHandleForHeapStart(), 1, msizeofDescHeapIncrement);
+	// set the srv buffers.
+	CD3DX12_GPU_DESCRIPTOR_HANDLE handleSRV(mlDescriptorHeaps[0]->GetGPUDescriptorHandleForHeapStart(), 2, msizeofCBVSRVDescHeapIncrement);
 	cmdList->SetGraphicsRootDescriptorTable(0, handleSRV);
 
-	if (mDrawMode == 1) {
-		// set the per frame constant buffer.
+	if (mDrawMode) {
+		// set the constant buffers.
 		XMFLOAT4 frustum[6];
 		C.GetViewFrustum(frustum);
 		
 		PerFrameConstantBuffer constants;
 		constants.viewproj = C.GetViewProjectionMatrixTransposed();
+		float h = T.GetHeightMapDepth() / 2.0f;
+		float w = T.GetHeightMapWidth() / 2.0f;
+		constants.shadowviewproj = DNC.GetShadowViewProjectionMatrixTransposed(XMFLOAT3(w, h, 0.0f), sqrtf(w * w + h * h));
+		constants.shadowtransform = DNC.GetShadowTransformMatrixTransposed(XMFLOAT3(w, h, 0.0f), sqrtf(w * w + h * h));
 		constants.eye = C.GetEyePosition();
 		constants.frustum[0] = frustum[0];
 		constants.frustum[1] = frustum[1];
@@ -474,12 +694,8 @@ void Scene::DrawTerrain(ID3D12GraphicsCommandList* cmdList) {
 		constants.frustum[5] = frustum[5];
 		constants.light = DNC.GetLight();
 		memcpy(mpPerFrameConstantsMapped, &constants, sizeof(PerFrameConstantBuffer));
-				
+		
 		cmdList->SetGraphicsRootDescriptorTable(1, mlDescriptorHeaps[0]->GetGPUDescriptorHandleForHeapStart());
-	
-		// set the terrain shader constants
-		CD3DX12_GPU_DESCRIPTOR_HANDLE handleCBV(mlDescriptorHeaps[0]->GetGPUDescriptorHandleForHeapStart(), 2, msizeofDescHeapIncrement);
-		cmdList->SetGraphicsRootDescriptorTable(2, handleCBV);
 	}
 	
 	// mDrawMode = 0/false for 2D rendering and 1/true for 3D rendering
@@ -489,17 +705,27 @@ void Scene::DrawTerrain(ID3D12GraphicsCommandList* cmdList) {
 void Scene::Draw() {
 	mpGFX->ResetPipeline();
 
+	ID3D12GraphicsCommandList* cmdList = mpGFX->GetCommandList();
+
+//	if (mDrawMode) {
+		// only render to the shadow map if we're rendering in 3D.
+		SetShadowMapRender(cmdList);
+		DrawShadowMap(cmdList);
+		CloseCommandLists(cmdList);
+		mpGFX->Run();
+//	}
+
+
 	// set a clear color.
 	const float clearColor[] = { 0.2f, 0.6f, 1.0f, 1.0f };
-	ID3D12GraphicsCommandList* cmdList = mpGFX->GetCommandList();
 	mpGFX->SetBackBufferRender(cmdList, clearColor);
 
-	SetViewport();
+	SetViewport(cmdList);
 	
 	DrawTerrain(cmdList);
 
-	mpGFX->SetBackBufferPresent(mpGFX->GetCommandList());
-	CloseCommandLists();
+	mpGFX->SetBackBufferPresent(cmdList);
+	CloseCommandLists(cmdList);
 	mpGFX->Render();
 }
 

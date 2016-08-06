@@ -2,7 +2,7 @@
 Scene.h
 
 Author:			Chris Serson
-Last Edited:	July 26, 2016
+Last Edited:	August 1, 2016
 
 Description:	Class for creating, managing, and rendering a scene.
 
@@ -32,6 +32,8 @@ enum InputKeys { _0 = 0x30, _1, _2, _3, _4, _5, _6, _7, _8, _9, _A = 0x41, _B, _
 
 struct PerFrameConstantBuffer {
 	XMFLOAT4X4	viewproj;
+	XMFLOAT4X4	shadowviewproj;
+	XMFLOAT4X4	shadowtransform;
 	XMFLOAT4	eye;
 	XMFLOAT4	frustum[6];
 	LightSource light;
@@ -59,12 +61,14 @@ public:
 
 private:
 	// Close all command lists. Currently there is only the one.
-	void CloseCommandLists();
+	void CloseCommandLists(ID3D12GraphicsCommandList* cmdList);
 	// Set the viewport and scissor rectangle for the scene.
-	void SetViewport();
+	void SetViewport(ID3D12GraphicsCommandList* cmdList);
 
 	// Initialize a SRV/CBV heap. Currently hard-coded for 2 descriptors, the per-frame constant buffer and the terrain's heightmap texture.
 	void InitSRVCBVHeap();
+	// Initialize a DSV heap. Currently contains the shadow map heap.
+	void InitDSVHeap();
 	// Initialize the per-frame constant buffer.
 	void InitPerFrameConstantBuffer();
 	
@@ -72,12 +76,20 @@ private:
 	void InitPipelineTerrain2D();
 	// Initialize the root signature and pipeline state object for rendering the terrain in 3D.
 	void InitPipelineTerrain3D();
+	// Initialize the root signature and pipeline state object for rendering to the shadow map.
+	void InitPipelineShadowMap();
 	// Initialize all of the resources needed by the terrain: heightmap texture, vertex buffer, index buffer.
 	void InitTerrainResources();
+
+	void InitShadowMap(UINT width, UINT height);
 
 	void CleanupTemporaryBuffers();
 	
 	void DrawTerrain(ID3D12GraphicsCommandList* cmdList);
+
+	// set shadow map viewport/scissor rect, set null rtv, set our shadow map dsv
+	void SetShadowMapRender(ID3D12GraphicsCommandList* cmdList);
+	void DrawShadowMap(ID3D12GraphicsCommandList* cmdList);
 
 	Graphics*							mpGFX;
 	Terrain								T;
@@ -85,13 +97,16 @@ private:
 	DayNightCycle						DNC;
 	D3D12_VIEWPORT						mViewport;
 	D3D12_RECT							mScissorRect;
+	D3D12_VIEWPORT						mShadowMapViewport;
+	D3D12_RECT							mShadowMapScissorRect;
 	int									mDrawMode;
-	UINT								msizeofDescHeapIncrement;
+	UINT								msizeofCBVSRVDescHeapIncrement;
 	std::vector<ID3D12RootSignature*>	mlRootSigs;
 	std::vector<ID3D12PipelineState*>	mlPSOs;
 	std::vector<ID3D12DescriptorHeap*>	mlDescriptorHeaps;
 	std::vector<ID3D12Resource*>		mlTemporaryUploadBuffers;
 	ID3D12Resource*						mpPerFrameConstants;
+	ID3D12Resource*						mpShadowMap;
 	PerFrameConstantBuffer*				mpPerFrameConstantsMapped;
 };
 

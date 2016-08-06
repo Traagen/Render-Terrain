@@ -1,6 +1,8 @@
 cbuffer PerFrameData : register(b0)
 {
 	float4x4 viewproj;
+	float4x4 shadowviewproj;
+	float4x4 shadowtransform;
 	float4 eye;
 	float4 frustum[6];
 }
@@ -59,7 +61,7 @@ bool aabbOutsideFrustumTest(float3 center, float3 extents, float4 frustumPlanes[
 float CalcTessFactor(float3 p) {
 	float d = distance(p, eye);
 
-	float s = saturate((d - 16.0f) / (512.0f - 16.0f));
+	float s = saturate((d - 16.0f) / (256.0f - 16.0f));
 	return pow(2, (lerp(6, 0, s)));
 }
 

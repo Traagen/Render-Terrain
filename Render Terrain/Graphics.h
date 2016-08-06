@@ -2,7 +2,7 @@
 Graphics.h
 
 Author:			Chris Serson
-Last Edited:	July 26, 2016
+Last Edited:	August 1, 2016
 
 Description:	Class for creating and managing a Direct3D 12 instance.
 
@@ -62,6 +62,7 @@ namespace graphics {
 
 		// send command list to graphics card for rendering.
 		void Render();
+		void Run();
 		// reset the pipeline for the next frame.
 		void ResetPipeline();
 		// set the back buffer as the render target for the provided command list.
@@ -84,6 +85,8 @@ namespace graphics {
 		void CreateSRV(ID3D12Resource*& tex, D3D12_SHADER_RESOURCE_VIEW_DESC* srvDesc, D3D12_CPU_DESCRIPTOR_HANDLE handle);
 		// Create a constant buffer view
 		void CreateCBV(D3D12_CONSTANT_BUFFER_VIEW_DESC* desc, D3D12_CPU_DESCRIPTOR_HANDLE handle);
+		// Create a depth/stencil buffer view
+		void CreateDSV(ID3D12Resource*& tex, D3D12_DEPTH_STENCIL_VIEW_DESC* desc, D3D12_CPU_DESCRIPTOR_HANDLE handle);
 		// Create an upload buffer, ready for mapping.
 		void CreateUploadBuffer(ID3D12Resource*& buffer, D3D12_RESOURCE_DESC* texDesc);
 		// Create a default buffer, preconfigured as a copy destination

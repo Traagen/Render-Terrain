@@ -2,7 +2,7 @@
 Graphics.cpp
 
 Author:			Chris Serson
-Last Edited:	July 26, 2016
+Last Edited:	August 1, 2016
 
 Description:	Class for creating and managing a Direct3D 12 instance.
 */
@@ -169,7 +169,7 @@ namespace graphics {
 		dsvDesc.Flags = D3D12_DSV_FLAG_NONE;
 
 		mpDev->CreateDepthStencilView(mpDepthStencilBuffer, &dsvDesc, mpDSVHeap->GetCPUDescriptorHandleForHeapStart());
-
+		
 		// Create CommandAllocator and Fence for each Frame Buffer.
 		for (int i = 0; i < FRAME_BUFFER_COUNT; ++i) {
 			// attempt to create a command allocator.
@@ -293,6 +293,11 @@ namespace graphics {
 		mpDev->CreateConstantBufferView(desc, handle);
 	}
 
+	// Create a depth/stencil buffer view
+	void Graphics::CreateDSV(ID3D12Resource*& tex, D3D12_DEPTH_STENCIL_VIEW_DESC* desc, D3D12_CPU_DESCRIPTOR_HANDLE handle) {
+		mpDev->CreateDepthStencilView(tex, desc, handle);
+	}
+
 	// Create an upload buffer, ready for mapping.
 	void Graphics::CreateUploadBuffer(ID3D12Resource*& buffer, D3D12_RESOURCE_DESC* texDesc) {
 		if (FAILED(mpDev->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD), D3D12_HEAP_FLAG_NONE,
@@ -313,8 +318,7 @@ namespace graphics {
 
 	// Create a commited resource. More general version of CreateUploadBuffer and CreateDefaultBuffer. Still needs work/testing.
 	void Graphics::CreateCommittedResource(ID3D12Resource*& heap, D3D12_RESOURCE_DESC* descTex,
-		D3D12_HEAP_PROPERTIES* propHeap, D3D12_HEAP_FLAGS flags,
-		D3D12_RESOURCE_STATES state, D3D12_CLEAR_VALUE* clear) {
+		D3D12_HEAP_PROPERTIES* propHeap, D3D12_HEAP_FLAGS flags, D3D12_RESOURCE_STATES state, D3D12_CLEAR_VALUE* clear) {
 		if (FAILED(mpDev->CreateCommittedResource(propHeap, flags, descTex, state, clear, IID_PPV_ARGS(&heap)))) {
 			throw GFX_Exception("Failed to create committed resource.");
 		}
@@ -329,7 +333,7 @@ namespace graphics {
 		CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(mpRTVHeap->GetCPUDescriptorHandleForHeapStart(), mBufferIndex, mRTVDescSize);
 		CD3DX12_CPU_DESCRIPTOR_HANDLE dsvHandle(mpDSVHeap->GetCPUDescriptorHandleForHeapStart());
 		cmdList->OMSetRenderTargets(1, &rtvHandle, false, &dsvHandle);
-
+	
 		cmdList->ClearRenderTargetView(rtvHandle, clearColor, 0, NULL);
 		cmdList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 	}
@@ -416,6 +420,18 @@ namespace graphics {
 		}
 	}
 
+	void Graphics::Run() {
+		// load the command list.
+		ID3D12CommandList* lCmds[] = { mpCmdList };
+
+		// execute
+		mpCmdQ->ExecuteCommandLists(__crt_countof(lCmds), lCmds);
+
+		if (FAILED(mpCmdList->Reset(maCmdAllocators[mBufferIndex], NULL))) {
+			throw GFX_Exception("CommandList Reset failed on UpdatePipeline.");
+		}
+	}
+
 	void Graphics::Render() {
 		// load the command list.
 		ID3D12CommandList* lCmds[] = { mpCmdList };
@@ -430,7 +446,7 @@ namespace graphics {
 		HRESULT hr = mpSwapChain->Present(0, 0);
 		if (FAILED(hr)) {
 			hr = mpDev->GetDeviceRemovedReason();
-			throw GFX_Exception("failed");
+			throw GFX_Exception("swapchain present failed");
 		}
 	}
 

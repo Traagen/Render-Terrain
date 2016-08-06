@@ -1,3 +1,16 @@
+/*
+Light.h
+
+Author:			Chris Serson
+Last Edited:	August 1, 2016
+
+Description:	Class representing directional lights.
+
+Usage:			- Calling the constructor, either through DirectionalLight L(...);
+				or DirectionalLight* L; L = new DirectionalLight(...);, will initialize.
+				- Can also create a Light* L; L = new DirectionalLight(...); to instantiate
+				with polymorphism.
+*/
 #pragma once
 #include "Light.h"
 

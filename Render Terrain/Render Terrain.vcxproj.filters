@@ -97,5 +97,11 @@
     <FxCompile Include="RenderTerrainTessDS.hlsl">
       <Filter>Resource Files</Filter>
     </FxCompile>
+    <FxCompile Include="RenderShadowMapDS.hlsl">
+      <Filter>Resource Files</Filter>
+    </FxCompile>
+    <FxCompile Include="RenderShadowMapHS.hlsl">
+      <Filter>Resource Files</Filter>
+    </FxCompile>
   </ItemGroup>
 </Project>

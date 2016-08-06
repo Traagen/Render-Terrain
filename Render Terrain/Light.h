@@ -1,3 +1,15 @@
+/*
+Light.h
+
+Author:			Chris Serson
+Last Edited:	August 1, 2016
+
+Description:	Class representing lights.
+
+Usage:			- While you can instantiate a Light, it is better to
+				create a child class for each type of light.
+				ie. directional, point, spot.
+*/
 #pragma once
 
 #include <DirectXMath.h>

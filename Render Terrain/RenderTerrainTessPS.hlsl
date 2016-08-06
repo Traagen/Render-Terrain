@@ -12,6 +12,8 @@ struct LightData {
 cbuffer PerFrameData : register(b0)
 {
 	float4x4 viewproj;
+	float4x4 shadowviewproj;
+	float4x4 shadowtransform;
 	float4 eye;
 	float4 frustum[6];
 	LightData light;
@@ -25,58 +27,22 @@ cbuffer TerrainData : register(b1)
 }
 
 Texture2D<float> heightmap : register(t0);
+Texture2D<float> shadowmap : register(t1);
+
 SamplerState hmsampler : register(s0);
-SamplerState detailsampler : register(s2);
+SamplerComparisonState shadowsampler : register(s2);
 
 struct DS_OUTPUT
 {
 	float4 pos : SV_POSITION;
+	float4 shadowpos : TEXCOORD0;
 	float3 worldpos : POSITION;
-    float2 tex : TEXCOORD;
+    float2 tex : TEXCOORD1;
 };
 
-/*
-// Phone lighting model
-struct Material
-{
-	float Ka, Kd, Ks, A;
-};
-
-//--------------------------------------------------------------------------------------
-// Phong Lighting Reflection Model
-//--------------------------------------------------------------------------------------
-float4 calcPhongLighting(Material M, float4 LColor, float3 N, float3 L, float3 V, float3 R)
-{
-	float4 ambientLight = float4(0.32f, 0.82f, 0.41f, 1.0f);
-	float4 Ia = M.Ka * ambientLight;
-	float4 Id = M.Kd * saturate(dot(N, L));
-	float4 Is = M.Ks * pow(saturate(dot(R, V)), M.A);
-
-	//return saturate(Ia + (Id + Is) * LColor);
-	return Ia + (Id + Is) * LColor;
-}
-
-float4 main(VS_OUTPUT input) : SV_Target
-{
-	// temporary light source.
-	float4 light = normalize(float4(1.0f, 1.0f, -1.0f, 1.0f));
-	float4 lightcolor = float4(0.32f, 0.82f, 0.41f, 1.0f);
-
-	//calculate lighting vectors - renormalize vectors
-	input.norm = normalize(input.norm);
-	float3 V = normalize(eye - (float3) input.worldpos);
-	//DONOT USE -light.dir since the reflection returns a ray from the surface
-	float3 R = reflect(light, input.norm);
-
-	Material mat;
-	mat.Ka = 0.1f;
-	mat.Kd = 0.8f;
-	mat.Ks = 0.3f;
-	mat.A = 0.1f;
-	//calculate lighting
-	return calcPhongLighting(mat, lightcolor, input.norm, -light, V, R);
-}
-*/
+// shadow map constants
+static const float SMAP_SIZE = 2048.0f;
+static const float SMAP_DX = 1.0f / SMAP_SIZE;
 
 // code for putting together cotangent frame and perturbing normal from normal map.
 // code originally presented by Christian Schuler
@@ -110,18 +76,6 @@ float3 perturb_normal(float3 N, float3 V, float2 texcoord) {
 }*/
 
 float3 estimateNormal(float2 texcoord) {
-	/*float2 leftTex = texcoord + float2(-1.0f / (float)width, 0.0f);
-	float2 rightTex = texcoord + float2(1.0f / (float)width, 0.0f);
-	float2 bottomTex = texcoord + float2(0.0f, 1.0f / (float)height);
-	float2 topTex = texcoord + float2(0.0f, -1.0f / (float)height);
-
-	float leftZ = heightmap.SampleLevel(hmsampler, leftTex, 0).r * scale;
-	float rightZ = heightmap.SampleLevel(hmsampler, rightTex, 0).r * scale;
-	float bottomZ = heightmap.SampleLevel(hmsampler, bottomTex, 0).r * scale;
-	float topZ = heightmap.SampleLevel(hmsampler, topTex, 0).r * scale;
-
-	return normalize(float3(leftZ - rightZ, topZ - bottomZ, 1.0f));*/
-
 	float2 b = texcoord + float2(0.0f, -0.3f / depth);
 	float2 c = texcoord + float2(0.3f / width, -0.3f / depth);
 	float2 d = texcoord + float2(0.3f / width, 0.0f);
@@ -147,6 +101,32 @@ float3 estimateNormal(float2 texcoord) {
 	return normalize(float3(x, y, z));
 }
 
+float calcShadowFactor(float4 shadowPosH) {
+	// No need to divide shadowPosH.xyz by shadowPosH.w because we only have a directional light.
+	
+	// Depth in NDC space.
+	float depth = shadowPosH.z;
+
+	// Texel size.
+	const float dx = SMAP_DX;
+
+	float percentLit = 0.0f;
+	const float2 offsets[9] = {
+		float2(-dx,  -dx), float2(0.0f,  -dx), float2(dx,  -dx),
+		float2(-dx, 0.0f), float2(0.0f, 0.0f), float2(dx, 0.0f),
+		float2(-dx,   dx), float2(0.0f,   dx), float2(dx,   dx)
+	};
+
+	// 3x3 box filter pattern. Each sample does a 4-tap PCF.
+	[unroll]
+	for (int i = 0; i < 9; ++i) {
+		percentLit += shadowmap.SampleCmpLevelZero(shadowsampler, shadowPosH.xy + offsets[i], depth);
+	}
+
+	// average the samples.
+	return percentLit / 9.0f;
+}
+
 // basic diffuse/ambient lighting
 float4 main(DS_OUTPUT input) : SV_TARGET
 {
@@ -161,17 +141,13 @@ float4 main(DS_OUTPUT input) : SV_TARGET
 //	float3 viewvector = eye.xyz - input.worldpos;
 //	norm = perturb_normal(norm, viewvector, input.tex * 256.0f);
 
-	//float4 N = float4(norm, 1.0f);
-	//float4 norm = float4(normalize(input.norm), 1.0f);
-    //float diffuse = saturate(dot(N, -light));
-    //float ambient = 0.1f;
     float4 color = float4(0.22f, 0.72f, 0.31f, 1.0f);
 
 	float4 ambient = color * light.amb;
 	float4 diffuse = color * light.dif * dot(-light.dir, norm);
 	float3 V = reflect(light.dir, norm);
 	float3 toEye = normalize(eye.xyz - input.worldpos);
-	float4 specular = color * 0.1f * light.spec * pow(max(dot(V, toEye), 0.0f), 1.0f);
+	float4 specular = color * 0.1f * light.spec * pow(max(dot(V, toEye), 0.0f), 2.0f);
 //	float4 specular = float4(0.0f, 0.0f, 0.0f, 1.0f);
 	//float3 color = float3(0.48f, 0.2f, 0.09f);
 	
@@ -213,7 +189,5 @@ float4 main(DS_OUTPUT input) : SV_TARGET
 		color = float3(1.0f, 1.0f, 1.0f);
 	}
 	*/
-//	return float4(color, 1.0f);
-    //return float4(saturate((color * diffuse) + (color * ambient)), 1.0f);
-	return saturate(ambient + diffuse + specular);
+	return ambient + (diffuse + specular) * (dot(light.dir, norm) < 0 ? calcShadowFactor(input.shadowpos) : 0);
 }
