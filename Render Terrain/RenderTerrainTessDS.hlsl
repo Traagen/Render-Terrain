@@ -93,7 +93,7 @@ DS_OUTPUT main(
 	
 	output.pos = float4(output.worldpos, 1.0f);
 	output.shadowpos = output.pos;
-	//output.shadowpos += float4(estimateNormal(output.tex) * 4.0f, 0.0f);
+	//output.shadowpos += float4(estimateNormal(output.tex) * 5.0f, 0.0f);
 
 	output.pos = mul(output.pos, viewproj);
 	// generate projective tex-coords to project shadow map onto scene.

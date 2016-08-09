@@ -2,7 +2,7 @@
 Light.h
 
 Author:			Chris Serson
-Last Edited:	August 1, 2016
+Last Edited:	August 7, 2016
 
 Description:	Class representing lights.
 
@@ -38,6 +38,8 @@ public:
 
 	LightSource GetLight() { return mlsLightData; }
 	void SetLightDirection(XMFLOAT3 dir) { mlsLightData.direction = dir; }
+	void SetDiffuseColor(XMFLOAT4 c) { mlsLightData.intensityDiffuse = c; }
+	void SetSpecularColor(XMFLOAT4 c) { mlsLightData.intensitySpecular = c; }
 
 protected:
 	LightSource mlsLightData;

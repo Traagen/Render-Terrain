@@ -37,6 +37,7 @@ static void KeyUp(UINT key) {
 
 static void KeyDown(UINT key) {
 	switch (key) {
+		case VK_SPACE:
 		case _W:
 		case _S:
 		case _A:

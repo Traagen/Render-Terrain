@@ -2,7 +2,7 @@
 Scene.cpp
 
 Author:			Chris Serson
-Last Edited:	August 5, 2016
+Last Edited:	August 7, 2016
 
 Description:	Class for creating, managing, and rendering a scene.
 */
@@ -40,7 +40,7 @@ Scene::Scene(int height, int width, Graphics* GFX) : T(), C(height, width), DNC(
 
 	// Initialize everything needed for the shadow map.
 	InitDSVHeap();
-	InitShadowMap(1024, 1024);
+	InitShadowMap(2048, 2048);
 	InitPipelineShadowMap();
 	
 	// after creating and initializing the heightmap for the terrain, we need to close the command list
@@ -377,11 +377,11 @@ void Scene::InitPipelineShadowMap() {
 	descPSO.SampleDesc = descSample;
 	descPSO.SampleMask = UINT_MAX;
 	descPSO.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-	descPSO.RasterizerState.CullMode = D3D12_CULL_MODE_FRONT;
+	descPSO.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
 	descPSO.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
-	descPSO.RasterizerState.DepthBias = 100;
+//	descPSO.RasterizerState.DepthBias = -50000;
 	descPSO.RasterizerState.DepthBiasClamp = 0.0f;
-	descPSO.RasterizerState.SlopeScaledDepthBias = 1.5f;
+//	descPSO.RasterizerState.SlopeScaledDepthBias = -10.0f;
 	descPSO.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
 	descPSO.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
 
@@ -645,6 +645,7 @@ void Scene::DrawShadowMap(ID3D12GraphicsCommandList* cmdList) {
 	float w = T.GetHeightMapWidth() / 2.0f;
 	constants.viewproj = C.GetViewProjectionMatrixTransposed();
 	constants.shadowviewproj = DNC.GetShadowViewProjectionMatrixTransposed(XMFLOAT3(w, h, 0.0f), sqrtf(w * w + h * h));
+	//constants.shadowviewproj = DNC.GetShadowViewProjectionMatrixTransposed(XMFLOAT3(64, 64, 360.0f), sqrtf(128 * 128 + 128 * 128));
 	constants.eye = C.GetEyePosition();
 	constants.frustum[0] = frustum[0];
 	constants.frustum[1] = frustum[1];
@@ -684,7 +685,9 @@ void Scene::DrawTerrain(ID3D12GraphicsCommandList* cmdList) {
 		float h = T.GetHeightMapDepth() / 2.0f;
 		float w = T.GetHeightMapWidth() / 2.0f;
 		constants.shadowviewproj = DNC.GetShadowViewProjectionMatrixTransposed(XMFLOAT3(w, h, 0.0f), sqrtf(w * w + h * h));
+		//constants.shadowviewproj = DNC.GetShadowViewProjectionMatrixTransposed(XMFLOAT3(64, 64, 360.0f), sqrtf(64 * 64 + 64 * 64));
 		constants.shadowtransform = DNC.GetShadowTransformMatrixTransposed(XMFLOAT3(w, h, 0.0f), sqrtf(w * w + h * h));
+		//constants.shadowtransform = DNC.GetShadowTransformMatrixTransposed(XMFLOAT3(64, 64, 360.0f), sqrtf(64 * 64 + 64 * 64));
 		constants.eye = C.GetEyePosition();
 		constants.frustum[0] = frustum[0];
 		constants.frustum[1] = frustum[1];
@@ -711,8 +714,6 @@ void Scene::Draw() {
 		// only render to the shadow map if we're rendering in 3D.
 		SetShadowMapRender(cmdList);
 		DrawShadowMap(cmdList);
-		CloseCommandLists(cmdList);
-		mpGFX->Run();
 //	}
 
 
@@ -730,6 +731,7 @@ void Scene::Draw() {
 }
 
 void Scene::Update() {
+	_sleep(1); // without this, smaller heightmaps were unable to animate correctly as frame rate too high so angle always ended up at 0.
 	DNC.Update();
 
 	Draw();
@@ -761,6 +763,9 @@ void Scene::HandleKeyboardInput(UINT key) {
 			break;
 		case _2: // draw in 3D.
 			mDrawMode = 1;
+			break;
+		case VK_SPACE:
+			DNC.TogglePause();
 			break;
 	}
 }

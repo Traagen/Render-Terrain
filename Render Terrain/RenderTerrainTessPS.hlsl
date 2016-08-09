@@ -143,51 +143,11 @@ float4 main(DS_OUTPUT input) : SV_TARGET
 
     float4 color = float4(0.22f, 0.72f, 0.31f, 1.0f);
 
-	float4 ambient = color * light.amb;
-	float4 diffuse = color * light.dif * dot(-light.dir, norm);
+	float shadowfactor = calcShadowFactor(input.shadowpos);
+	float4 diffuse = max(shadowfactor, light.amb) * light.dif * dot(-light.dir, norm);
 	float3 V = reflect(light.dir, norm);
 	float3 toEye = normalize(eye.xyz - input.worldpos);
-	float4 specular = color * 0.1f * light.spec * pow(max(dot(V, toEye), 0.0f), 2.0f);
-//	float4 specular = float4(0.0f, 0.0f, 0.0f, 1.0f);
-	//float3 color = float3(0.48f, 0.2f, 0.09f);
+	float4 specular = shadowfactor * 0.1f * light.spec * pow(max(dot(V, toEye), 0.0f), 2.0f);
 	
-    /*float slope = 1.0f - input.norm.z;
-	float scale = input.tex.w / 256.0f;
-
-
-    if (input.tex.z == 0.0f) // sea level
-    {
-        color = float3(0.04f, 0.36f, 0.96f);
-	}
-	else if (input.tex.z < 20 * scale) {
-		color = lerp(float3(1.0f, 0.92f, 0.8f), float3(0.32f, 0.82f, 0.41f), input.tex.z / (20 * scale));
-	}
-	else if (input.tex.z < 180 * scale) {
-		if (slope <= 0.2f)
-		{
-			color = float3(0.32f, 0.82f, 0.41f); // deep green;
-			//color = float3(0.0f, 1.0f, 0.0f);
-		}
-		else if (slope > 0.2f && slope < 0.6f)
-		{
-			color = float3(0.46f, 0.74f, 0.56f); // lemongrass;
-			//color = float3(0.0f, 0.0f, 1.0f);
-		}
-		else if (slope >= 0.6f)
-		{
-			color = float3(0.38f, 0.41f, 0.42f); // basalt grey
-			//  color = float3(1.0f, 0.0f, 0.0f);
-		}
-	}
-	else if (input.tex.z < 200 * scale) {
-		color = lerp(float3(0.46f, 0.74f, 0.56f), float3(0.38f, 0.41f, 0.42f), (input.tex.z - 180) / (20 * scale));
-	}
-	else if (input.tex.b < 220 * scale) {
-		color = lerp(float3(0.38f, 0.41f, 0.42f), float3(1.0f, 1.0f, 1.0f), (input.tex.z - 200) / (20 * scale));
-	}
-	else {
-		color = float3(1.0f, 1.0f, 1.0f);
-	}
-	*/
-	return ambient + (diffuse + specular) * (dot(light.dir, norm) < 0 ? calcShadowFactor(input.shadowpos) : 0);
+	return (diffuse + specular) * color;
 }
