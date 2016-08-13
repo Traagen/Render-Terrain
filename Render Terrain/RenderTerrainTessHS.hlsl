@@ -11,8 +11,9 @@ cbuffer PerFrameData : register(b0)
 struct VS_OUTPUT
 {
 	float3 worldpos : POSITION0;
-	float2 boundsZ : POSITION1;
-	float2 tex : TEXCOORD;
+	float3 aabbmin : POSITION1;
+	float3 aabbmax : POSITION2;
+	float3 tex : TEXCOORD;
 };
 // Output control point
 struct HS_CONTROL_POINT_OUTPUT
@@ -26,6 +27,7 @@ struct HS_CONSTANT_DATA_OUTPUT
 {
 	float EdgeTessFactor[4]			: SV_TessFactor; // e.g. would be [4] for a quad domain
 	float InsideTessFactor[2]		: SV_InsideTessFactor; // e.g. would be Inside[2] for a quad domain
+	uint skirt : SKIRT;
 };
 
 #define NUM_CONTROL_POINTS 4
@@ -71,13 +73,14 @@ HS_CONSTANT_DATA_OUTPUT CalcHSPatchConstants(
 	uint PatchID : SV_PrimitiveID)
 {
 	HS_CONSTANT_DATA_OUTPUT output;
+	output.skirt = ip[0].tex.z;
 
 	// build axis-aligned bounding box. 
 	// ip[0] is lower left corner
 	// ip[3] is upper right corner
 	// get z value from boundsZ variable. Correct value will be in ip[0].
-	float3 vMin = float3(ip[0].worldpos.x, ip[0].worldpos.y, ip[0].boundsZ.x);
-	float3 vMax = float3(ip[3].worldpos.x, ip[3].worldpos.y, ip[0].boundsZ.y);
+	float3 vMin = ip[0].aabbmin;
+	float3 vMax = ip[0].aabbmax;
 	
 	// center/extents representation.
 	float3 boxCenter = 0.5f * (vMin + vMax);
@@ -93,7 +96,28 @@ HS_CONSTANT_DATA_OUTPUT CalcHSPatchConstants(
 
 		return output;
 	} else {
+		// don't tessellate any part of the skirt that isn't directly touching the terrain.
+		if (ip[0].tex.z == 0.0f) {
+			output.EdgeTessFactor[0] = 1.0f;
+			output.EdgeTessFactor[1] = 1.0f;
+			output.EdgeTessFactor[2] = 1.0f;
+			output.EdgeTessFactor[3] = 1.0f;
+			output.InsideTessFactor[0] = 1.0f;
+			output.InsideTessFactor[1] = 1.0f;
 
+			return output;
+		} else if (ip[0].tex.z < 5.0f) {
+			float3 e3 = 0.5f * (ip[2].worldpos + ip[3].worldpos);
+
+			output.EdgeTessFactor[0] = 1.0f;
+			output.EdgeTessFactor[1] = 1.0f;
+			output.EdgeTessFactor[2] = 1.0f;
+			output.EdgeTessFactor[3] = CalcTessFactor(e3);
+			output.InsideTessFactor[0] = 1.0f;
+			output.InsideTessFactor[1] = 1.0f;
+
+			return output;
+		}
 		// tessellate based on distance from the camera.
 		// compute tess factor based on edges.
 		// compute midpoint of edges.
@@ -128,7 +152,7 @@ HS_CONTROL_POINT_OUTPUT main(
 
 	// Insert code to compute Output here
 	output.worldpos = ip[i].worldpos;
-	output.tex = ip[i].tex;
+	output.tex = ip[i].tex.xy;
 
 	return output;
 }

@@ -2,7 +2,7 @@
 Terrain.h
 
 Author:			Chris Serson
-Last Edited:	July 26, 2016
+Last Edited:	August 11, 2016
 
 Description:	Class for loading a heightmap and rendering as a terrain.
 
@@ -27,8 +27,9 @@ using namespace graphics;
 
 struct Vertex {
 	XMFLOAT3 position;
-	XMFLOAT2 boundsZ;
-	XMFLOAT2 tex;
+	XMFLOAT3 aabbmin;
+	XMFLOAT3 aabbmax;
+	XMFLOAT3 tex;
 };
 
 class Terrain {
@@ -43,6 +44,7 @@ public:
 	UINT GetSizeOfHeightMap() { return mWidth * mDepth * sizeof(float); }
 	UINT GetHeightMapWidth() { return mWidth; }
 	UINT GetHeightMapDepth() { return mDepth; }
+	int GetBaseHeight() { return mBaseHeight; }
 	float* GetHeightMapTextureData() { return maImage; }
 	Vertex* GetVertexArray() { return maVertices; }
 	UINT* GetIndexArray() { return maIndices; }
@@ -73,10 +75,12 @@ private:
 	float*						maImage;
 	unsigned int				mWidth;
 	unsigned int				mDepth;
+	int							mBaseHeight;
 	unsigned long				mVertexCount;
 	unsigned long				mIndexCount;
 	float						mHeightScale;
 	Vertex*						maVertices;		// buffer to contain vertex array prior to upload.
 	UINT*						maIndices;		// buffer to contain index array prior to upload.
+
 };
 

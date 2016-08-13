@@ -2,7 +2,7 @@
 Terrain.cpp
 
 Author:			Chris Serson
-Last Edited:	July 26, 2016
+Last Edited:	August 11, 2016
 
 Description:	Class for loading a heightmap and rendering as a terrain.
 */
@@ -78,17 +78,46 @@ void Terrain::CreateMesh3D() {
 	int tessFactor = 4;
 	int scalePatchX = mWidth / tessFactor;
 	int scalePatchY = mDepth / tessFactor;
-	mVertexCount = scalePatchX * scalePatchY;
+	int numVertsInTerrain = scalePatchX * scalePatchY;
+	// number of vertices needed for terrain + base vertices for skirt.
+	mVertexCount = numVertsInTerrain + scalePatchX * 4;
 
 	// create a vertex array 1/4 the size of the height map in each dimension,
 	// to be stretched over the height map
-	int arrSize = (int)(scalePatchX * scalePatchY);
+	int arrSize = (int)(mVertexCount);
 	maVertices = new Vertex[arrSize];
 	for (int y = 0; y < scalePatchY; ++y) {
 		for (int x = 0; x < scalePatchX; ++x) {
-			maVertices[y * scalePatchX + x].position = XMFLOAT3((float)x * tessFactor, (float)y * tessFactor, maImage[y * mWidth * tessFactor + x * tessFactor] * mHeightScale);
-			maVertices[y * scalePatchX + x].tex = XMFLOAT2((float)x / scalePatchX, (float)y / scalePatchY);
+			maVertices[y * scalePatchX + x].position = XMFLOAT3((float)x * tessFactor, (float)y * tessFactor, maImage[(y * mWidth + x) * tessFactor] * mHeightScale);
+			maVertices[y * scalePatchX + x].tex = XMFLOAT3((float)x / (float)scalePatchX, (float)y / (float)scalePatchY, 5.0f);
 		}
+	}
+
+	mBaseHeight = (int)(CalcZBounds(maVertices[0], maVertices[numVertsInTerrain - 1]).x - 10);
+
+	// create base vertices for side 1 of skirt. y = 0.
+	int iVertex = numVertsInTerrain;
+	for (int x = 0; x < scalePatchX; ++x) {
+		maVertices[iVertex].position = XMFLOAT3(x * tessFactor, 0.0f, mBaseHeight);
+		maVertices[iVertex++].tex = XMFLOAT3((float)x / (float)scalePatchX, 0.0f, 1.0f);
+	}
+
+	// create base vertices for side 2 of skirt. y = mDepth - tessFactor.
+	for (int x = 0; x < scalePatchX; ++x) {
+		maVertices[iVertex].position = XMFLOAT3(x * tessFactor, mDepth - tessFactor, mBaseHeight);
+		maVertices[iVertex++].tex = XMFLOAT3((float)x / (float)scalePatchX, (float)(mDepth - tessFactor) / (float)mDepth, 2.0f);
+	}
+
+	// create base vertices for side 3 of skirt. x = 0.
+	for (int y = 0; y < scalePatchY; ++y) {
+		maVertices[iVertex].position = XMFLOAT3(0.0f, y * tessFactor, mBaseHeight);
+		maVertices[iVertex++].tex = XMFLOAT3(0.0f, (float)y / (float)scalePatchY, 3.0f);
+	}
+
+	// create base vertices for side 4 of skirt. x = mWidth - tessFactor.
+	for (int y = 0; y < scalePatchY; ++y) {
+		maVertices[iVertex].position = XMFLOAT3(mWidth - tessFactor, y * tessFactor, mBaseHeight);
+		maVertices[iVertex++].tex = XMFLOAT3((float)(mWidth - tessFactor) / (float)mWidth, (float)y / (float)scalePatchY, 4.0f);
 	}
 
 	// create an index buffer
@@ -97,7 +126,9 @@ void Terrain::CreateMesh3D() {
 	//  0,  1,  2,  3,  4,
 	//  5,  6,  7,  8,  9,
 	// 10, 11, 12, 13, 14
-	arrSize = (scalePatchX - 1) * (scalePatchY - 1) * 4;
+	// need to add indices for 4 edge skirts (2 x-aligned, 2 y-aligned, 4 indices per patch).
+	// + 4 indices for patch representing bottom plane.
+	arrSize = (scalePatchX - 1) * (scalePatchY - 1) * 4 + 2 * 4 * (scalePatchX - 1) + 2 * 4 * (scalePatchY - 1) + 4;
 	maIndices = new UINT[arrSize];
 	int i = 0;
 	for (int y = 0; y < scalePatchY - 1; ++y) {
@@ -115,10 +146,66 @@ void Terrain::CreateMesh3D() {
 			// z bounds is a bit harder as we need to find the max and min y values in the heightmap for the patch range.
 			// store it in the first vertex
 			XMFLOAT2 bz = CalcZBounds(maVertices[vert0], maVertices[vert3]);
-			maVertices[vert0].boundsZ = bz;
+			maVertices[vert0].aabbmin = XMFLOAT3(maVertices[vert0].position.x, maVertices[vert0].position.y, bz.x);
+			maVertices[vert0].aabbmax = XMFLOAT3(maVertices[vert3].position.x, maVertices[vert3].position.y, bz.y);
 		}
 	}
 
+	// so as not to interfere with the terrain wrt bounds for frustum culling, we need the 0th control point of each skirt patch to be a base vertex as defined above.
+	// add indices for side 1 of skirt. y = 0.
+	iVertex = numVertsInTerrain;
+	for (int x = 0; x < scalePatchX - 1; ++x) {
+		maIndices[i++] = iVertex;		// control point 0
+		maIndices[i++] = iVertex + 1;	// control point 1
+		maIndices[i++] = x;				// control point 2
+		maIndices[i++] = x + 1;			// control point 3
+		XMFLOAT2 bz = CalcZBounds(maVertices[x], maVertices[x + 1]);
+		maVertices[iVertex].aabbmin = XMFLOAT3(x * tessFactor, 0.0f, mBaseHeight);
+		maVertices[iVertex++].aabbmax = XMFLOAT3((x + 1) * tessFactor, 0.0f, bz.y);
+	}
+	// add indices for side 2 of skirt. y = mDepth - tessFactor.
+	++iVertex;
+	for (int x = 0; x < scalePatchX - 1; ++x) {
+		maIndices[i++] = iVertex + 1;
+		maIndices[i++] = iVertex;
+		int offset = scalePatchX * (scalePatchY - 1);
+		maIndices[i++] = x + offset + 1;
+		maIndices[i++] = x + offset;
+		XMFLOAT2 bz = CalcZBounds(maVertices[x + offset], maVertices[x + offset + 1]);
+		maVertices[++iVertex].aabbmin = XMFLOAT3(x * tessFactor, mDepth - tessFactor, mBaseHeight);
+		maVertices[iVertex].aabbmax = XMFLOAT3((x + 1) * tessFactor, mDepth - tessFactor, bz.y);
+	}
+	// add indices for side 3 of skirt. x = 0.
+	++iVertex;
+	for (int y = 0; y < scalePatchY - 1; ++y) {
+		maIndices[i++] = iVertex + 1;
+		maIndices[i++] = iVertex;
+		maIndices[i++] = (y + 1) * scalePatchX;
+		maIndices[i++] = y * scalePatchX;
+		XMFLOAT2 bz = CalcZBounds(maVertices[y * scalePatchX], maVertices[(y + 1) * scalePatchX]);
+		maVertices[++iVertex].aabbmin = XMFLOAT3(0.0f, y * tessFactor, mBaseHeight);
+		maVertices[iVertex].aabbmax = XMFLOAT3(0.0f, (y + 1) * tessFactor, bz.y);
+	}
+	// add indices for side 4 of skirt. x = mWidth - tessFactor.
+	++iVertex;
+	for (int y = 0; y < scalePatchY - 1; ++y) {
+		maIndices[i++] = iVertex;
+		maIndices[i++] = iVertex + 1;
+		maIndices[i++] = y * scalePatchX + scalePatchX - 1;
+		maIndices[i++] = (y + 1) * scalePatchX + scalePatchX - 1;
+		XMFLOAT2 bz = CalcZBounds(maVertices[y * scalePatchX + scalePatchX - 1], maVertices[(y + 1) * scalePatchX + scalePatchX - 1]);
+		maVertices[iVertex].aabbmin = XMFLOAT3(mWidth - tessFactor, y * tessFactor, mBaseHeight);
+		maVertices[iVertex++].aabbmax = XMFLOAT3(mWidth - tessFactor, (y + 1) * tessFactor, bz.y);
+	}
+	// add indices for bottom plane.
+	maIndices[i++] = numVertsInTerrain + scalePatchX - 1;
+	maIndices[i++] = numVertsInTerrain;
+	maIndices[i++] = numVertsInTerrain + scalePatchX + scalePatchX - 1;
+	maIndices[i++] = numVertsInTerrain + scalePatchX;
+	maVertices[numVertsInTerrain + scalePatchX - 1].aabbmin = XMFLOAT3(0.0f, 0.0f, mBaseHeight);
+	maVertices[numVertsInTerrain + scalePatchX - 1].aabbmax = XMFLOAT3(mWidth, mDepth, mBaseHeight);
+	maVertices[numVertsInTerrain + scalePatchX - 1].tex.z = 0.0f;
+	
 	mIndexCount = arrSize;
 }
 

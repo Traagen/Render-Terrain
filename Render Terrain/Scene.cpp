@@ -2,14 +2,14 @@
 Scene.cpp
 
 Author:			Chris Serson
-Last Edited:	August 7, 2016
+Last Edited:	August 12, 2016
 
 Description:	Class for creating, managing, and rendering a scene.
 */
 #include "Scene.h"
 #include<stdlib.h>
 
-Scene::Scene(int height, int width, Graphics* GFX) : T(), C(height, width), DNC(1440) {
+Scene::Scene(int height, int width, Graphics* GFX) : T(), C(height, width), DNC(1500, 2048) {
 	mpGFX = GFX;
 	mDrawMode = 0;
 
@@ -278,8 +278,9 @@ void Scene::InitPipelineTerrain3D() {
 	D3D12_INPUT_LAYOUT_DESC	descInputLayout = {};
 	D3D12_INPUT_ELEMENT_DESC descElementLayout[] = {
 		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		{ "POSITION", 1, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "POSITION", 1, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "POSITION", 2, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 	};
 
 	descInputLayout.NumElements = sizeof(descElementLayout) / sizeof(D3D12_INPUT_ELEMENT_DESC);
@@ -357,8 +358,9 @@ void Scene::InitPipelineShadowMap() {
 	D3D12_INPUT_LAYOUT_DESC	descInputLayout = {};
 	D3D12_INPUT_ELEMENT_DESC descElementLayout[] = {
 		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		{ "POSITION", 1, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "POSITION", 1, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "POSITION", 2, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 	};
 
 	descInputLayout.NumElements = sizeof(descElementLayout) / sizeof(D3D12_INPUT_ELEMENT_DESC);
@@ -379,9 +381,9 @@ void Scene::InitPipelineShadowMap() {
 	descPSO.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
 	descPSO.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
 	descPSO.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
-//	descPSO.RasterizerState.DepthBias = -50000;
+	descPSO.RasterizerState.DepthBias = 25000;
 	descPSO.RasterizerState.DepthBiasClamp = 0.0f;
-//	descPSO.RasterizerState.SlopeScaledDepthBias = -10.0f;
+	descPSO.RasterizerState.SlopeScaledDepthBias = 3.5f;
 	descPSO.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
 	descPSO.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
 
@@ -456,7 +458,7 @@ void Scene::InitTerrainResources() {
 
 	// prepare constant buffer data for upload.
 	D3D12_SUBRESOURCE_DATA dataCB = {};
-	dataCB.pData = &TerrainShaderConstants(T.GetScale(), (float)T.GetHeightMapWidth(), (float)T.GetHeightMapDepth());
+	dataCB.pData = &TerrainShaderConstants(T.GetScale(), (float)T.GetHeightMapWidth(), (float)T.GetHeightMapDepth(), (float)T.GetBaseHeight());
 	dataCB.RowPitch = GetRequiredIntermediateSize(constantbuffer, 0, 1);
 	dataCB.SlicePitch = dataCB.RowPitch;
 
@@ -731,7 +733,7 @@ void Scene::Draw() {
 }
 
 void Scene::Update() {
-	_sleep(1); // without this, smaller heightmaps were unable to animate correctly as frame rate too high so angle always ended up at 0.
+	_sleep(2); // without this, smaller heightmaps were unable to animate correctly as frame rate too high so angle always ended up at 0.
 	DNC.Update();
 
 	Draw();

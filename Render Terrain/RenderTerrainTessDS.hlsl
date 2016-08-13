@@ -12,6 +12,7 @@ cbuffer TerrainData : register(b1)
 	float scale;
 	float width;
 	float depth;
+	float base;
 }
 
 Texture2D<float> heightmap : register(t0);
@@ -38,6 +39,7 @@ struct HS_CONSTANT_DATA_OUTPUT
 {
 	float EdgeTessFactor[4]			: SV_TessFactor; // e.g. would be [4] for a quad domain
 	float InsideTessFactor[2]		: SV_InsideTessFactor; // e.g. would be Inside[2] for a quad domain
+	uint skirt : SKIRT;
 };
 
 #define NUM_CONTROL_POINTS 4
@@ -78,8 +80,15 @@ DS_OUTPUT main(
 
 	output.worldpos = lerp(lerp(patch[0].worldpos, patch[1].worldpos, domain.x), lerp(patch[2].worldpos, patch[3].worldpos, domain.x), domain.y);
 	output.tex = lerp(lerp(patch[0].tex, patch[1].tex, domain.x), lerp(patch[2].tex, patch[3].tex, domain.x), domain.y);
-	output.worldpos.z = heightmap.SampleLevel(hmsampler, output.tex, 0.0f) * scale;
-
+	
+	if (input.skirt < 5) {
+		if (input.skirt > 0 && domain.y == 1) {
+			output.worldpos.z = heightmap.SampleLevel(hmsampler, output.tex, 0.0f) * scale;
+		}
+	} else {
+		output.worldpos.z = heightmap.SampleLevel(hmsampler, output.tex, 0.0f) * scale;
+	}
+	
 //	float3 norm = estimateNormal(output.tex);
 //	output.worldpos += norm * (2.0f * heightmap.SampleLevel(detailsampler, output.tex * 256.0f, 0.0f) - 1.0f) / 5.0f;
 	
@@ -91,13 +100,14 @@ DS_OUTPUT main(
 	output.pos = float4(output.pos.xyz + output.norm * (2.0f * mysample - 1.0f), 1.0f);
 	*/
 	
+	// generate coordinates transformed into view/projection space.
 	output.pos = float4(output.worldpos, 1.0f);
-	output.shadowpos = output.pos;
-	//output.shadowpos += float4(estimateNormal(output.tex) * 5.0f, 0.0f);
-
 	output.pos = mul(output.pos, viewproj);
-	// generate projective tex-coords to project shadow map onto scene.
-	output.shadowpos = mul(output.shadowpos, shadowtransform);
 
+	// generate projective tex-coords to project shadow map onto scene.
+	output.shadowpos = float4(output.worldpos, 1.0f);
+	//output.shadowpos += float4(estimateNormal(output.tex) * 5.0f, 0.0f);
+	output.shadowpos = mul(output.shadowpos, shadowtransform);
+	
 	return output;
 }

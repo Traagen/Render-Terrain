@@ -11,8 +11,9 @@ cbuffer PerFrameData : register(b0)
 struct VS_OUTPUT
 {
 	float3 worldpos : POSITION0;
-	float2 boundsZ : POSITION1;
-	float2 tex : TEXCOORD;
+	float3 aabbmin : POSITION1;
+	float3 aabbmax : POSITION2;
+	float3 tex : TEXCOORD;
 };
 // Output control point
 struct HS_CONTROL_POINT_OUTPUT
@@ -26,6 +27,7 @@ struct HS_CONSTANT_DATA_OUTPUT
 {
 	float EdgeTessFactor[4]			: SV_TessFactor; // e.g. would be [4] for a quad domain
 	float InsideTessFactor[2]		: SV_InsideTessFactor; // e.g. would be Inside[2] for a quad domain
+	uint skirt						: SKIRT;
 };
 
 #define NUM_CONTROL_POINTS 4
@@ -33,8 +35,8 @@ struct HS_CONSTANT_DATA_OUTPUT
 float CalcTessFactor(float3 p) {
 	float d = distance(p, eye);
 
-	float s = saturate((d - 16.0f) / (256.0f - 16.0f));
-	return pow(2, (lerp(6, 0, s)));
+	float s = saturate((d - 128.0f) / (256.0f - 128.0f));
+	return pow(2, (lerp(4, 0, s)));
 }
 
 // Patch Constant Function
@@ -43,6 +45,31 @@ HS_CONSTANT_DATA_OUTPUT CalcHSPatchConstants(
 	uint PatchID : SV_PrimitiveID)
 {
 	HS_CONSTANT_DATA_OUTPUT output;
+	output.skirt = ip[0].tex.z;
+
+	// don't tessellate any part of the skirt that isn't directly touching the terrain.
+	if (ip[0].tex.z == 0.0f) {
+		output.EdgeTessFactor[0] = 1.0f;
+		output.EdgeTessFactor[1] = 1.0f;
+		output.EdgeTessFactor[2] = 1.0f;
+		output.EdgeTessFactor[3] = 1.0f;
+		output.InsideTessFactor[0] = 1.0f;
+		output.InsideTessFactor[1] = 1.0f;
+
+		return output;
+	}
+	else if (ip[0].tex.z < 5.0f) {
+		float3 e3 = 0.5f * (ip[2].worldpos + ip[3].worldpos);
+
+		output.EdgeTessFactor[0] = 1.0f;
+		output.EdgeTessFactor[1] = 1.0f;
+		output.EdgeTessFactor[2] = 1.0f;
+		output.EdgeTessFactor[3] = CalcTessFactor(e3);
+		output.InsideTessFactor[0] = 1.0f;
+		output.InsideTessFactor[1] = 1.0f;
+
+		return output;
+	}
 
 	// tessellate based on distance from the camera.
 	// compute tess factor based on edges.
@@ -77,7 +104,7 @@ HS_CONTROL_POINT_OUTPUT main(
 
 	// Insert code to compute Output here
 	output.worldpos = ip[i].worldpos;
-	output.tex = ip[i].tex;
+	output.tex = ip[i].tex.xy;
 
 	return output;
 }

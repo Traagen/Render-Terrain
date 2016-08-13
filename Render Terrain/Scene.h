@@ -2,7 +2,7 @@
 Scene.h
 
 Author:			Chris Serson
-Last Edited:	August 1, 2016
+Last Edited:	August 11, 2016
 
 Description:	Class for creating, managing, and rendering a scene.
 
@@ -43,8 +43,9 @@ struct TerrainShaderConstants {
 	float scale;
 	float width;
 	float depth;
+	float base;
 
-	TerrainShaderConstants(float s, float w, float d) : scale(s), width(w), depth(d) {}
+	TerrainShaderConstants(float s, float w, float d, float b) : scale(s), width(w), depth(d), base(b) {}
 };
 
 class Scene {

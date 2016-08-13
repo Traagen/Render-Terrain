@@ -2,7 +2,7 @@
 DayNightCycle.h
 
 Author:			Chris Serson
-Last Edited:	August 7, 2016
+Last Edited:	August 12, 2016
 
 Description:	Class for managing the Day/Night Cycle for the scene.
 
@@ -58,7 +58,7 @@ static const XMFLOAT4 SUN_SPECULAR_COLORS[] = {
 
 class DayNightCycle {
 public:
-	DayNightCycle(UINT period);
+	DayNightCycle(UINT period, UINT shadowSize);
 	~DayNightCycle();
 
 	void Update();
@@ -75,5 +75,6 @@ private:
 	time_point<system_clock>	mtLast;		// the last point in time that we updated our cycle.
 	float						mCurrentSunAngle = 0.0f;
 	bool						isPaused = false;
+	UINT						mShadowMapSize;
 };
 

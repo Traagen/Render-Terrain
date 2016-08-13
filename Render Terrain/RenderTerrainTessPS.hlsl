@@ -24,6 +24,7 @@ cbuffer TerrainData : register(b1)
 	float scale;
 	float width;
 	float depth;
+	float base;
 }
 
 Texture2D<float> heightmap : register(t0);
