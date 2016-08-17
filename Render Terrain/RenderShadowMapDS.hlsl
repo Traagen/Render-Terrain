@@ -1,8 +1,8 @@
 cbuffer PerFrameData : register(b0)
 {
 	float4x4 viewproj;
-	float4x4 shadowviewproj;
-	float4x4 shadowtransform;
+	float4x4 shadowmatrix;
+	float4x4 shadowtexmatrix;
 	float4 eye;
 	float4 frustum[6];
 }
@@ -22,7 +22,6 @@ SamplerState detailsampler : register(s1);
 struct DS_OUTPUT
 {
 	float4 pos : SV_POSITION;
-	float3 worldpos : POSITION;
 };
 
 // Output control point
@@ -49,19 +48,18 @@ DS_OUTPUT main(
 	const OutputPatch<HS_CONTROL_POINT_OUTPUT, NUM_CONTROL_POINTS> patch)
 {
 	DS_OUTPUT output;
-
-	output.worldpos = lerp(lerp(patch[0].worldpos, patch[1].worldpos, domain.x), lerp(patch[2].worldpos, patch[3].worldpos, domain.x), domain.y);
+	float3 worldpos = lerp(lerp(patch[0].worldpos, patch[1].worldpos, domain.x), lerp(patch[2].worldpos, patch[3].worldpos, domain.x), domain.y);
 	float2 tex = lerp(lerp(patch[0].tex, patch[1].tex, domain.x), lerp(patch[2].tex, patch[3].tex, domain.x), domain.y);
 
 	if (input.skirt < 5) {
 		if (input.skirt > 0 && domain.y == 1) {
-			output.worldpos.z = heightmap.SampleLevel(hmsampler, tex, 0.0f) * scale;
+			worldpos.z = heightmap.SampleLevel(hmsampler, tex, 0.0f) * scale;
 		}
 	} else {
-		output.worldpos.z = heightmap.SampleLevel(hmsampler, tex, 0.0f) * scale;
+		worldpos.z = heightmap.SampleLevel(hmsampler, tex, 0.0f) * scale;
 	}
 
-	output.pos = float4(output.worldpos, 1.0f);
-	output.pos = mul(output.pos, shadowviewproj);
+	output.pos = float4(worldpos, 1.0f);
+	output.pos = mul(output.pos, shadowmatrix);
 	return output;
 }

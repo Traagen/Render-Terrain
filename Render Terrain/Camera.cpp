@@ -2,7 +2,7 @@
 Camera.cpp
 
 Author:			Chris Serson
-Last Edited:	July 18, 2016
+Last Edited:	August 15, 2016
 
 Description:	Class for creating and controlling the camera
 */
@@ -11,19 +11,22 @@ Description:	Class for creating and controlling the camera
 
 Camera::Camera(int h, int w) {
 	mYaw = mPitch = mRoll = 0.0f;
-
+	mWidth = w;
+	mHeight = h;
 	// build projection matrix
-	XMMATRIX viewproj = XMMatrixPerspectiveFovLH(XMConvertToRadians(60.0f), (float)w / (float)h, 0.1f, 3000.0f);
-	XMStoreFloat4x4(&mmProjection, viewproj);
+	XMMATRIX proj = XMMatrixPerspectiveFovLH(XMConvertToRadians(60.0f), (float)w / (float)h, 0.1f, 3000.0f);
+	XMStoreFloat4x4(&mmProjection, proj);
 
 	// set starting camera state
 	mvPos = XMFLOAT4(0.0f, 0.0f, 150.0f, 0.0f);
 	XMVECTOR look = XMVector3Normalize(XMLoadFloat4(&XMFLOAT4(1.0f, 1.0f, 0.0f, 0.0f)));
-	XMStoreFloat4(&mvLookAt, look);
+	XMStoreFloat4(&mvStartLook, look);
 	XMVECTOR left = XMVector3Cross(look, XMLoadFloat4(&XMFLOAT4(0.0f, 0.0f, 1.0f, 0.0f)));
-	XMStoreFloat4(&mvLeft, left);
+	XMStoreFloat4(&mvStartLeft, left);
 	XMVECTOR up = XMVector3Cross(left, look);
-	XMStoreFloat4(&mvUp, up);
+	XMStoreFloat4(&mvStartUp, up);
+
+	Update();
 }
 
 Camera::~Camera() {
@@ -31,30 +34,7 @@ Camera::~Camera() {
 
 // combine the view and projection matrices and transpose the result
 XMFLOAT4X4 Camera::GetViewProjectionMatrixTransposed() {
-	// rotate camera based on yaw, pitch, and roll.
-	XMVECTOR look = XMLoadFloat4(&mvLookAt);
-	XMVECTOR up = XMLoadFloat4(&mvUp);
-	XMVECTOR left = XMLoadFloat4(&mvLeft);
-	if (mPitch != 0 || mYaw != 0 || mRoll != 0) {
-		float pitch_rad = XMConvertToRadians(mPitch);
-		float yaw_rad = XMConvertToRadians(mYaw);
-		float roll_rad = XMConvertToRadians(mRoll);
-
-		XMMATRIX rot, rotp, roty, rotr;
-		rotp = XMMatrixRotationAxis(left, pitch_rad);
-		roty = XMMatrixRotationAxis(up, yaw_rad);
-		rotr = XMMatrixRotationAxis(look, roll_rad);
-		rot = rotp * roty * rotr;
-		look = XMVector3Normalize(XMVector3Transform(look, rot));
-		left = XMVector3Normalize(XMVector3Transform(left, rot));
-		up = XMVector3Cross(left, look);
-	}
-	
-	// build view matrix
-	XMVECTOR camera = XMLoadFloat4(&mvPos);
-	XMVECTOR target = camera + look; // add camera position plus target direction to get target location for view matrix function
-	XMMATRIX view = XMMatrixLookAtLH(camera, target, up);
-	
+	XMMATRIX view = XMLoadFloat4x4(&mmView);
 	XMMATRIX proj = XMLoadFloat4x4(&mmProjection);
 	XMMATRIX viewproj = XMMatrixTranspose(view * proj);
 	XMFLOAT4X4 final;
@@ -64,28 +44,7 @@ XMFLOAT4X4 Camera::GetViewProjectionMatrixTransposed() {
 
 // Return the 6 planes forming the view frustum. Stored in the array planes.
 void Camera::GetViewFrustum(XMFLOAT4 planes[6]) {
-	// rotate camera based on yaw, pitch, and roll.
-	XMVECTOR look = XMLoadFloat4(&mvLookAt);
-	XMVECTOR up = XMLoadFloat4(&mvUp);
-	XMVECTOR left = XMLoadFloat4(&mvLeft);
-	if (mPitch != 0 || mYaw != 0 || mRoll != 0) {
-		float pitch_rad = XMConvertToRadians(mPitch);
-		float yaw_rad = XMConvertToRadians(mYaw);
-		float roll_rad = XMConvertToRadians(mRoll);
-
-		XMMATRIX rot, rotp, roty, rotr;
-		rotp = XMMatrixRotationAxis(left, pitch_rad);
-		roty = XMMatrixRotationAxis(up, yaw_rad);
-		rotr = XMMatrixRotationAxis(look, roll_rad);
-		rot = rotp * roty * rotr;
-		look = XMVector3Normalize(XMVector3Transform(look, rot));
-		left = XMVector3Normalize(XMVector3Transform(left, rot));
-		up = XMVector3Cross(left, look);
-	}
-	// build view/projection matrix
-	XMVECTOR camera = XMLoadFloat4(&mvPos);
-	XMVECTOR target = camera + look; // add camera position plus target direction to get target location for view matrix function
-	XMMATRIX view = XMMatrixLookAtLH(camera, target, up);
+	XMMATRIX view = XMLoadFloat4x4(&mmView);
 	XMMATRIX proj = XMLoadFloat4x4(&mmProjection);
 	XMFLOAT4X4 M;
 	XMStoreFloat4x4(&M, view * proj);
@@ -115,10 +74,10 @@ void Camera::GetViewFrustum(XMFLOAT4 planes[6]) {
 	planes[3].w = M(3, 3) - M(3, 1);
 
 	// near
-	planes[4].x = M(0, 2);
-	planes[4].y = M(1, 2);
-	planes[4].z = M(2, 2);
-	planes[4].w = M(3, 2);
+	planes[4].x = M(0, 3) + M(0, 2);
+	planes[4].y = M(1, 3) + M(1, 2);
+	planes[4].z = M(2, 3) + M(2, 2);
+	planes[4].w = M(3, 3) + M(3, 2);
 
 	// far
 	planes[5].x = M(0, 3) - M(0, 2);
@@ -133,49 +92,131 @@ void Camera::GetViewFrustum(XMFLOAT4 planes[6]) {
 	}
 }
 
-// Move the camera along its 3 axis: mvLookAt (forward/backward), mvLeft (left/left), mvUp (up/down)
-XMFLOAT4 Camera::Translate(XMFLOAT3 move) {
-	// rotate camera based on yaw, pitch, and roll.
-	XMVECTOR look = XMLoadFloat4(&mvLookAt);
-	XMVECTOR up = XMLoadFloat4(&mvUp);
-	XMVECTOR left = XMLoadFloat4(&mvLeft);
-	if (mPitch != 0 || mYaw != 0 || mRoll != 0) {
-		float pitch_rad = XMConvertToRadians(mPitch);
-		float yaw_rad = XMConvertToRadians(mYaw);
-		float roll_rad = XMConvertToRadians(mRoll);
+void Camera::GetBoundingSphereByNearFar(float near, float far, XMFLOAT4& center, float& radius) {
+	// get the current view matrix
+	XMMATRIX view = XMLoadFloat4x4(&mmView);
+	// calculate the projection matrix based on the supplied near/far planes.
+	XMMATRIX proj = XMMatrixPerspectiveFovLH(XMConvertToRadians(60.0f), (float)mWidth / (float)mHeight, near, far);
+	XMMATRIX viewproj = view * proj;
+	XMMATRIX invViewProj = XMMatrixInverse(nullptr, viewproj); // the inverse view/projection matrix
+	
+	// 3 points on the unit cube representing the view frustum in view space.
+	XMVECTOR nlb = XMLoadFloat4(&XMFLOAT4(-1.0f, -1.0f, -1.0f, 1.0f));
+	XMVECTOR flb = XMLoadFloat4(&XMFLOAT4(-1.0f,  1.0f,  1.0f, 1.0f));
+	XMVECTOR frt = XMLoadFloat4(&XMFLOAT4( 1.0f,  1.0f,  1.0f, 1.0f));
 
-		XMMATRIX rot, rotp, roty, rotr;
-		rotp = XMMatrixRotationAxis(left, pitch_rad);
-		roty = XMMatrixRotationAxis(up, yaw_rad);
-		rotr = XMMatrixRotationAxis(look, roll_rad);
-		rot = rotp * roty * rotr;
-		look = XMVector3Normalize(XMVector3Transform(look, rot));
-		left = XMVector3Normalize(XMVector3Transform(left, rot));
-		up = XMVector3Cross(left, look);
+	// transform the frustum into world space.
+	nlb = XMVector3Transform(nlb, invViewProj);
+	flb = XMVector3Transform(flb, invViewProj);
+	frt = XMVector3Transform(frt, invViewProj);
+	
+	XMFLOAT4 _nlb, _nrt, _flb, _frt;
+	XMStoreFloat4(&_nlb, nlb);
+	XMStoreFloat4(&_flb, flb);
+	XMStoreFloat4(&_frt, frt);
+
+	// find circumcenter of triangle formed by these three points on the frustum.
+	XMVECTOR a = nlb / _nlb.w;
+	XMVECTOR b = flb / _flb.w;
+	XMVECTOR c = frt / _frt.w;
+	XMVECTOR ac = c - a;
+	XMVECTOR ab = b - a;
+	XMVECTOR N = XMVector3Normalize(XMVector3Cross(ab, ac));
+	XMVECTOR halfAB = a + ab * 0.5f;
+	XMVECTOR halfAC = a + ac * 0.5f;
+	XMVECTOR perpAB = XMVector3Normalize(XMVector3Cross(ab, N));
+	XMVECTOR perpAC = XMVector3Normalize(XMVector3Cross(ac, N));
+	// line,line intersection test. Line 1 origin: halfAB, direction: perpAB; Line 2 origin: halfAC, direction: perpAC
+	N = XMVector3Cross(perpAB, perpAC);
+	XMVECTOR SR = halfAB - halfAC;
+	XMFLOAT4 _N, _SR, _E;
+	XMStoreFloat4(&_N, N);
+	XMStoreFloat4(&_SR, SR);
+	XMStoreFloat4(&_E, perpAC);
+	float absX = fabs(_N.x);
+	float absY = fabs(_N.y);
+	float absZ = fabs(_N.z);
+	float t;
+	if (absZ > absX && absZ > absY) {
+		t = (_SR.x * _E.y - _SR.y * _E.x) / _N.z;
+	} else if (absX > absY) {
+		t = (_SR.y * _E.z - _SR.z * _E.y) / _N.x;
+	} else {
+		t = (_SR.z * _E.x - _SR.x * _E.z) / _N.y;
 	}
 
+	XMVECTOR Circumcenter = halfAB - t * perpAB;
+	XMVECTOR r = XMVector3Length(frt - Circumcenter);
+
+	XMStoreFloat(&radius, r);
+	XMStoreFloat4(&center, Circumcenter);
+}
+
+// Move the camera along its 3 axis: mvStartLook (forward/backward), mvStartLeft (left/left), mvStartUp (up/down)
+void Camera::Translate(XMFLOAT3 move) {
+	XMVECTOR look = XMLoadFloat4(&mvCurLook);
+	XMVECTOR left = XMLoadFloat4(&mvCurLeft);
+	XMVECTOR up = XMLoadFloat4(&mvCurUp);
 	XMVECTOR tmp = XMLoadFloat4(&mvPos);
 	
 	tmp += look * move.x + left * move.y + up * move.z;
 
 	XMStoreFloat4(&mvPos, tmp);
-	return mvPos;
+	
+	Update();
 }
 
-// rotate the camera up and down, around mvLeft
+// rotate the camera up and down, around mvStartLeft
 void Camera::Pitch(float theta) {
 	mPitch += theta;
 	mPitch = mPitch > 360 ? mPitch - 360 : mPitch < -360 ? mPitch + 360 : mPitch;
+
+	Update();
 }
 
-// rotate the camera left and right, around mvUp
+// rotate the camera left and right, around mvStartUp
 void Camera::Yaw(float theta) {
 	mYaw += theta;
 	mYaw = mYaw > 360 ? mYaw - 360 : mYaw < -360 ? mYaw + 360 : mYaw;
+
+	Update();
 }
 
-// rotate the camera clockwise and counter-clockwise, around mvLookAt
+// rotate the camera clockwise and counter-clockwise, around mvStartLook
 void Camera::Roll(float theta) {
 	mRoll += theta;
 	mRoll = mRoll > 360 ? mRoll - 360 : mRoll < -360 ? mRoll + 360 : mRoll;
+
+	Update();
+}
+
+void Camera::Update() {
+	// rotate camera based on yaw, pitch, and roll.
+	XMVECTOR look = XMLoadFloat4(&mvStartLook);
+	XMVECTOR up = XMLoadFloat4(&mvStartUp);
+	
+	float pitch_rad = XMConvertToRadians(mPitch);
+	float yaw_rad = XMConvertToRadians(mYaw);
+	float roll_rad = XMConvertToRadians(mRoll);
+
+	XMMATRIX rot, rotp, roty, rotr;
+	XMVECTOR left = XMLoadFloat4(&mvStartLeft);
+
+	rotp = XMMatrixRotationAxis(left, pitch_rad);
+	roty = XMMatrixRotationAxis(up, yaw_rad);
+	rotr = XMMatrixRotationAxis(look, roll_rad);
+	rot = rotp * roty * rotr;
+	look = XMVector3Normalize(XMVector3Transform(look, rot));
+	left = XMVector3Normalize(XMVector3Transform(left, rot));
+	up = XMVector3Cross(left, look);
+
+	XMStoreFloat4(&mvCurLook, look);
+	XMStoreFloat4(&mvCurUp, up);
+	XMStoreFloat4(&mvCurLeft, left);
+
+	// build view matrix
+	XMVECTOR camera = XMLoadFloat4(&mvPos);
+	XMVECTOR target = camera + look; // add camera position plus target direction to get target location for view matrix function
+	XMMATRIX view = XMMatrixLookAtLH(camera, target, up);
+	XMStoreFloat4x4(&mmView, view);
 }

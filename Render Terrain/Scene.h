@@ -32,8 +32,8 @@ enum InputKeys { _0 = 0x30, _1, _2, _3, _4, _5, _6, _7, _8, _9, _A = 0x41, _B, _
 
 struct PerFrameConstantBuffer {
 	XMFLOAT4X4	viewproj;
-	XMFLOAT4X4	shadowviewproj;
-	XMFLOAT4X4	shadowtransform;
+	XMFLOAT4X4	shadowmatrix;
+	XMFLOAT4X4	shadowtexmatrix;
 	XMFLOAT4	eye;
 	XMFLOAT4	frustum[6];
 	LightSource light;
@@ -88,8 +88,6 @@ private:
 	
 	void DrawTerrain(ID3D12GraphicsCommandList* cmdList);
 
-	// set shadow map viewport/scissor rect, set null rtv, set our shadow map dsv
-	void SetShadowMapRender(ID3D12GraphicsCommandList* cmdList);
 	void DrawShadowMap(ID3D12GraphicsCommandList* cmdList);
 
 	Graphics*							mpGFX;
@@ -98,8 +96,8 @@ private:
 	DayNightCycle						DNC;
 	D3D12_VIEWPORT						mViewport;
 	D3D12_RECT							mScissorRect;
-	D3D12_VIEWPORT						mShadowMapViewport;
-	D3D12_RECT							mShadowMapScissorRect;
+	D3D12_VIEWPORT						maShadowMapViewports[4];
+	D3D12_RECT							maShadowMapScissorRects[4];
 	int									mDrawMode;
 	UINT								msizeofCBVSRVDescHeapIncrement;
 	std::vector<ID3D12RootSignature*>	mlRootSigs;

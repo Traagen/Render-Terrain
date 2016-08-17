@@ -12,8 +12,8 @@ struct LightData {
 cbuffer PerFrameData : register(b0)
 {
 	float4x4 viewproj;
-	float4x4 shadowviewproj;
-	float4x4 shadowtransform;
+	float4x4 shadowmatrix;
+	float4x4 shadowtexmatrix;
 	float4 eye;
 	float4 frustum[6];
 	LightData light;

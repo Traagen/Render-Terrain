@@ -2,7 +2,7 @@
 DayNightCycle.cpp
 
 Author:			Chris Serson
-Last Edited:	August 11, 2016
+Last Edited:	August 15, 2016
 
 Description:	Class for managing the Day/Night Cycle for the scene.
 */
@@ -24,12 +24,10 @@ DayNightCycle::DayNightCycle(UINT period, UINT shadowSize) : mdlSun(XMFLOAT4(0.3
 	mtLast = system_clock::now();
 }
 
-
 DayNightCycle::~DayNightCycle() {
 }
 
-
-void DayNightCycle::Update() {
+void DayNightCycle::Update(XMFLOAT3 centerBS, float radiusBS, Camera* cam) {
 	time_point<system_clock> now = system_clock::now();
 
 	if (!isPaused) {
@@ -110,24 +108,30 @@ void DayNightCycle::Update() {
 
 	// update the time for the next pass.
 	mtLast = now;
+
+	CalculateShadowMatrices(centerBS, radiusBS, cam);
 }
 
-XMFLOAT4X4 DayNightCycle::GetShadowViewProjectionMatrixTransposed(XMFLOAT3 centerBoundingSphere, float radiusBoundingSphere) {
-//	float radius = ceilf(radiusBoundingSphere);
-	float radius = radiusBoundingSphere;
+void DayNightCycle::CalculateShadowMatrices(XMFLOAT3 centerBS, float radiusBS, Camera* cam) {
+	XMFLOAT4 center;
+	float rad;
+	cam->GetBoundingSphereByNearFar(0.1f, 3000.0f, center, rad);
+	float radius = ceilf(rad);
 	LightSource light = mdlSun.GetLight();
 	XMVECTOR lightdir = XMLoadFloat3(&light.direction);
-	XMVECTOR targetpos = XMLoadFloat3(&centerBoundingSphere);
-	XMVECTOR lightpos = targetpos - 2.0f * radius * lightdir;
-	
+	XMVECTOR targetpos = XMLoadFloat4(&center);
+	XMVECTOR lightpos = targetpos - lightdir;
+
 	XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
 	up = XMVector3Cross(up, lightdir);
 
-	XMMATRIX V = XMMatrixLookAtLH(lightpos, targetpos, up); // light space view matrix
-	
-	// transform bounding sphere to light space
-	XMFLOAT3 spherecenterls;
-	XMStoreFloat3(&spherecenterls, XMVector3TransformCoord(targetpos, V));
+	XMMATRIX V = XMMatrixLookAtLH(lightpos, targetpos, up); // light space view matrix transform bounding sphere to light space
+
+	radius *= (float)(mShadowMapSize + 6) / (float)mShadowMapSize; // add padding to projection for rounding and for pcf.
+	XMFLOAT4 spherecenterls;
+
+	XMVECTOR c = XMLoadFloat4(&center);
+	XMStoreFloat4(&spherecenterls, XMVector3TransformCoord(c, V));
 
 	// orthographic frustum
 	float l = spherecenterls.x - radius;
@@ -141,48 +145,18 @@ XMFLOAT4X4 DayNightCycle::GetShadowViewProjectionMatrixTransposed(XMFLOAT3 cente
 	XMMATRIX S = V * P;
 
 	// add rounding to update shadowmap by texel-sized increments.
-	/*XMVECTOR shadowOrigin = XMVector3Transform(XMVectorZero(), S);
+	XMVECTOR shadowOrigin = XMVector3Transform(XMVectorZero(), S);
 	shadowOrigin *= ((float)mShadowMapSize / 2.0f);
 	XMFLOAT2 so;
 	XMStoreFloat2(&so, shadowOrigin);
-	XMVECTOR roundedOrigin = XMLoadFloat2(&XMFLOAT2(ceilf(so.x), ceilf(so.y)));
+	XMVECTOR roundedOrigin = XMLoadFloat2(&XMFLOAT2(round(so.x), round(so.y)));
 	XMVECTOR rounding = roundedOrigin - shadowOrigin;
 	rounding /= (mShadowMapSize / 2.0f);
 	XMStoreFloat2(&so, rounding);
 	XMMATRIX roundMatrix = XMMatrixTranslation(so.x, so.y, 0.0f);
-	S *= roundMatrix;*/
-	S = XMMatrixTranspose(S);
+	S *= roundMatrix;
 
-	XMFLOAT4X4 final;
-	XMStoreFloat4x4(&final, S);
-
-	return final;
-}
-
-XMFLOAT4X4 DayNightCycle::GetShadowTransformMatrixTransposed(XMFLOAT3 centerBoundingSphere, float radiusBoundingSphere) {
-//	float radius = ceilf(radiusBoundingSphere);
-	float radius = radiusBoundingSphere;
-	LightSource light = mdlSun.GetLight();
-	XMVECTOR lightdir = XMLoadFloat3(&light.direction);
-	XMVECTOR targetpos = XMLoadFloat3(&centerBoundingSphere);
-	XMVECTOR lightpos = targetpos - 2.0f * radius * lightdir;
-	
-	XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
-	up = XMVector3Cross(up, lightdir);
-
-	XMMATRIX V = XMMatrixLookAtLH(lightpos, targetpos, up); // light space view matrix
-															// transform bounding sphere to light space
-	XMFLOAT3 spherecenterls;
-	XMStoreFloat3(&spherecenterls, XMVector3TransformCoord(targetpos, V));
-
-	// orthographic frustum
-	float l = spherecenterls.x - radius;
-	float b = spherecenterls.y - radius;
-	float n = spherecenterls.z - radius;
-	float r = spherecenterls.x + radius;
-	float t = spherecenterls.y + radius;
-	float f = spherecenterls.z + radius;
-	XMMATRIX P = XMMatrixOrthographicOffCenterLH(l, r, b, t, n, f);
+	XMStoreFloat4x4(&mmShadowViewProj, XMMatrixTranspose(S));
 
 	// transform NDC space [-1, +1]^2 to texture space [0, 1]^2
 	XMMATRIX T(0.5f, 0.0f, 0.0f, 0.0f,
@@ -190,24 +164,7 @@ XMFLOAT4X4 DayNightCycle::GetShadowTransformMatrixTransposed(XMFLOAT3 centerBoun
 		0.0f, 0.0f, 1.0f, 0.0f,
 		0.5f, 0.5f, 0.0f, 1.0f);
 
-	XMMATRIX S = V * P;
-
-	// add rounding to update shadowmap by texel-sized increments.
-/*	XMVECTOR shadowOrigin = XMVector3Transform(XMVectorZero(), S);
-	shadowOrigin *= ((float)mShadowMapSize / 2.0f);
-	XMFLOAT2 so;
-	XMStoreFloat2(&so, shadowOrigin);
-	XMVECTOR roundedOrigin = XMLoadFloat2(&XMFLOAT2(ceilf(so.x), ceilf(so.y)));
-	XMVECTOR rounding = roundedOrigin - shadowOrigin;
-	rounding /= (mShadowMapSize / 2.0f);
-	XMStoreFloat2(&so, rounding);
-	XMMATRIX roundMatrix = XMMatrixTranslation(so.x, so.y, 0.0f);
-	S *= roundMatrix;*/
 	S *= T;
-	S = XMMatrixTranspose(S);
 
-	XMFLOAT4X4 final;
-	XMStoreFloat4x4(&final, S);
-
-	return final;
+	XMStoreFloat4x4(&mmShadowViewProjTex, XMMatrixTranspose(S));
 }

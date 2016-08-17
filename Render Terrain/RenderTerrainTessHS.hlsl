@@ -1,8 +1,8 @@
 cbuffer PerFrameData : register(b0)
 {
 	float4x4 viewproj;
-	float4x4 shadowviewproj;
-	float4x4 shadowtransform;
+	float4x4 shadowmatrix;
+	float4x4 shadowtexmatrix;
 	float4 eye;
 	float4 frustum[6];
 }
@@ -50,6 +50,7 @@ bool aabbBehindPlaneTest(float3 center, float3 extents, float4 plane) {
 
 // returns true if the box is completely outside the frustum.
 bool aabbOutsideFrustumTest(float3 center, float3 extents, float4 frustumPlanes[6]) {
+	[unroll]
 	for (int i = 0; i < 6; ++i) {
 		// if the box is completely behind any of the frustum planes, then it is outside the frustum.
 		if (aabbBehindPlaneTest(center, extents, frustumPlanes[i])) {
@@ -61,7 +62,7 @@ bool aabbOutsideFrustumTest(float3 center, float3 extents, float4 frustumPlanes[
 }
 
 float CalcTessFactor(float3 p) {
-	float d = distance(p, eye);
+	float d = distance(p, eye.xyz);
 
 	float s = saturate((d - 16.0f) / (256.0f - 16.0f));
 	return pow(2, (lerp(6, 0, s)));

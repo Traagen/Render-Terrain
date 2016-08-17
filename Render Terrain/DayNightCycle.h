@@ -2,7 +2,7 @@
 DayNightCycle.h
 
 Author:			Chris Serson
-Last Edited:	August 12, 2016
+Last Edited:	August 15, 2016
 
 Description:	Class for managing the Day/Night Cycle for the scene.
 
@@ -21,6 +21,7 @@ Future Work:	- Add support for both Sun and Moon at arbitrary locations.
 #pragma once
 
 #include "DirectionalLight.h"
+#include "Camera.h"
 #include <chrono>
 
 using namespace std::chrono;
@@ -40,7 +41,6 @@ static const XMFLOAT4 SUN_DIFFUSE_COLORS[] = {
 	{ 0.0f, 0.0f, 0.0f, 1.0f },
 	{ 0.0f, 0.0f, 0.0f, 1.0f }
 };
-
 static const XMFLOAT4 SUN_SPECULAR_COLORS[] = {
 	{ 0.0f, 0.0f, 0.0f, 1.0f },
 	{ 0.0f, 0.0f, 0.0f, 1.0f },
@@ -61,14 +61,16 @@ public:
 	DayNightCycle(UINT period, UINT shadowSize);
 	~DayNightCycle();
 
-	void Update();
+	void Update(XMFLOAT3 centerBS, float radiusBS, Camera* cam);
 	void TogglePause() { isPaused = !isPaused; }
 
 	LightSource GetLight() { return mdlSun.GetLight(); }
-	XMFLOAT4X4 GetShadowViewProjectionMatrixTransposed(XMFLOAT3 centerBoundingSphere, float radiusBoundingSphere);
-	XMFLOAT4X4 GetShadowTransformMatrixTransposed(XMFLOAT3 centerBoundingSphere, float radiusBoundingSphere);
+	XMFLOAT4X4 GetShadowViewProjMatrix() { return mmShadowViewProj; }
+	XMFLOAT4X4 GetShadowViewProjTexMatrix() { return mmShadowViewProjTex; }
 
 private:
+	void CalculateShadowMatrices(XMFLOAT3 centerBS, float radiusBS, Camera* cam);
+	
 	UINT						mPeriod;	// the number of game milliseconds that each real time millisecond should count as.
 	DirectionalLight			mdlSun;		// light source representing the sun. 
 	DirectionalLight			mdlMoon;	// light source representing the moon.
@@ -76,5 +78,7 @@ private:
 	float						mCurrentSunAngle = 0.0f;
 	bool						isPaused = false;
 	UINT						mShadowMapSize;
+	XMFLOAT4X4					mmShadowViewProj;
+	XMFLOAT4X4					mmShadowViewProjTex;
 };
 

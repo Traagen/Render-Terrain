@@ -1,8 +1,8 @@
 cbuffer PerFrameData : register(b0)
 {
 	float4x4 viewproj;
-	float4x4 shadowviewproj;
-	float4x4 shadowtransform;
+	float4x4 shadowmatrix;
+	float4x4 shadowtexmatrix;
 	float4 eye;
 	float4 frustum[6];
 }
@@ -107,7 +107,7 @@ DS_OUTPUT main(
 	// generate projective tex-coords to project shadow map onto scene.
 	output.shadowpos = float4(output.worldpos, 1.0f);
 	//output.shadowpos += float4(estimateNormal(output.tex) * 5.0f, 0.0f);
-	output.shadowpos = mul(output.shadowpos, shadowtransform);
+	output.shadowpos = mul(output.shadowpos, shadowtexmatrix);
 	
 	return output;
 }

@@ -2,14 +2,14 @@
 Scene.cpp
 
 Author:			Chris Serson
-Last Edited:	August 12, 2016
+Last Edited:	August 15, 2016
 
 Description:	Class for creating, managing, and rendering a scene.
 */
 #include "Scene.h"
 #include<stdlib.h>
 
-Scene::Scene(int height, int width, Graphics* GFX) : T(), C(height, width), DNC(1500, 2048) {
+Scene::Scene(int height, int width, Graphics* GFX) : T(), C(height, width), DNC(6000, 2048) {
 	mpGFX = GFX;
 	mDrawMode = 0;
 
@@ -337,8 +337,7 @@ void Scene::InitPipelineShadowMap() {
 
 	// It isn't really necessary to deny the other shaders access, but it does technically allow the GPU to optimize more.
 	CD3DX12_ROOT_SIGNATURE_DESC	descRoot;
-	descRoot.Init(_countof(paramsRoot), paramsRoot, 2, descSamplers, D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
-		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+	descRoot.Init(_countof(paramsRoot), paramsRoot, 2, descSamplers, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT | D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS);
 	ID3D12RootSignature* sigRoot;
 	mpGFX->CreateRootSig(&descRoot, sigRoot);
 	mlRootSigs.push_back(sigRoot);
@@ -346,9 +345,12 @@ void Scene::InitPipelineShadowMap() {
 	D3D12_SHADER_BYTECODE bcVS = {};
 	D3D12_SHADER_BYTECODE bcHS = {};
 	D3D12_SHADER_BYTECODE bcDS = {};
+	//D3D12_SHADER_BYTECODE bcGS = {};
+
 	mpGFX->CompileShader(L"RenderTerrainTessVS.hlsl", bcVS, VERTEX_SHADER);
 	mpGFX->CompileShader(L"RenderShadowMapHS.hlsl", bcHS, HULL_SHADER);
 	mpGFX->CompileShader(L"RenderShadowMapDS.hlsl", bcDS, DOMAIN_SHADER);
+//	mpGFX->CompileShader(L"CSMVPSelectGS.hlsl", bcGS, GEOMETRY_SHADER);
 
 	DXGI_SAMPLE_DESC descSample = {};
 	descSample.Count = 1; // turns multi-sampling off. Not supported feature for my card.
@@ -372,6 +374,7 @@ void Scene::InitPipelineShadowMap() {
 	descPSO.VS = bcVS;
 	descPSO.HS = bcHS;
 	descPSO.DS = bcDS;
+	//descPSO.GS = bcGS;
 	descPSO.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_PATCH;
 	descPSO.RTVFormats[0] = DXGI_FORMAT_UNKNOWN;
 	descPSO.NumRenderTargets = 0;
@@ -553,18 +556,24 @@ void Scene::InitTerrainResources() {
 }
 
 void Scene::InitShadowMap(UINT width, UINT height) {
-	// create a viewport and scissor rectangle as the shadow map is likely of different dimensions than our normal view.
-	mShadowMapViewport.TopLeftX = 0;
-	mShadowMapViewport.TopLeftY = 0;
-	mShadowMapViewport.Width = (float)width;
-	mShadowMapViewport.Height = (float)height;
-	mShadowMapViewport.MinDepth = 0;
-	mShadowMapViewport.MaxDepth = 1;
+	int w = width;
+	int h = height;
+	for (int i = 0; i < 2; ++i) {
+		for (int j = 0; j < 2; ++j) {
+			// create a viewport and scissor rectangle as the shadow map is likely of different dimensions than our normal view.
+			maShadowMapViewports[i * 2 + j].TopLeftX = i * w;
+			maShadowMapViewports[i * 2 + j].TopLeftY = j * h;
+			maShadowMapViewports[i * 2 + j].Width = (float)w;
+			maShadowMapViewports[i * 2 + j].Height = (float)h;
+			maShadowMapViewports[i * 2 + j].MinDepth = 0;
+			maShadowMapViewports[i * 2 + j].MaxDepth = 1;
 
-	mShadowMapScissorRect.left = 0;
-	mShadowMapScissorRect.top = 0;
-	mShadowMapScissorRect.right = width;
-	mShadowMapScissorRect.bottom = height;
+			maShadowMapScissorRects[i * 2 + j].left = i * w;
+			maShadowMapScissorRects[i * 2 + j].top = j * h;
+			maShadowMapScissorRects[i * 2 + j].right = maShadowMapScissorRects[i * 2 + j].left + w;
+			maShadowMapScissorRects[i * 2 + j].bottom = maShadowMapScissorRects[i * 2 + j].top + h;
+		}
+	}
 
 	// Create the shadow map texture buffer.
 	D3D12_RESOURCE_DESC	descTex = {};
@@ -616,18 +625,12 @@ void Scene::SetViewport(ID3D12GraphicsCommandList* cmdList) {
 	cmdList->RSSetScissorRects(1, &mScissorRect);
 }
 
-// set shadow map viewport/scissor rect, set null rtv, set our shadow map dsv
-void Scene::SetShadowMapRender(ID3D12GraphicsCommandList* cmdList) {
-	cmdList->RSSetViewports(1, &mShadowMapViewport);
-	cmdList->RSSetScissorRects(1, &mShadowMapScissorRect);
-
+void Scene::DrawShadowMap(ID3D12GraphicsCommandList* cmdList) {
 	cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(mpShadowMap, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_DEPTH_WRITE));
 
 	cmdList->ClearDepthStencilView(mlDescriptorHeaps[1]->GetCPUDescriptorHandleForHeapStart(), D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 	cmdList->OMSetRenderTargets(0, nullptr, false, &mlDescriptorHeaps[1]->GetCPUDescriptorHandleForHeapStart());
-}
 
-void Scene::DrawShadowMap(ID3D12GraphicsCommandList* cmdList) {
 	cmdList->SetPipelineState(mlPSOs[2]);
 	cmdList->SetGraphicsRootSignature(mlRootSigs[2]);
 
@@ -643,11 +646,8 @@ void Scene::DrawShadowMap(ID3D12GraphicsCommandList* cmdList) {
 	C.GetViewFrustum(frustum);
 
 	PerFrameConstantBuffer constants;
-	float h = T.GetHeightMapDepth() / 2.0f;
-	float w = T.GetHeightMapWidth() / 2.0f;
 	constants.viewproj = C.GetViewProjectionMatrixTransposed();
-	constants.shadowviewproj = DNC.GetShadowViewProjectionMatrixTransposed(XMFLOAT3(w, h, 0.0f), sqrtf(w * w + h * h));
-	//constants.shadowviewproj = DNC.GetShadowViewProjectionMatrixTransposed(XMFLOAT3(64, 64, 360.0f), sqrtf(128 * 128 + 128 * 128));
+	constants.shadowmatrix = DNC.GetShadowViewProjMatrix();
 	constants.eye = C.GetEyePosition();
 	constants.frustum[0] = frustum[0];
 	constants.frustum[1] = frustum[1];
@@ -660,8 +660,13 @@ void Scene::DrawShadowMap(ID3D12GraphicsCommandList* cmdList) {
 
 	cmdList->SetGraphicsRootDescriptorTable(1, mlDescriptorHeaps[0]->GetGPUDescriptorHandleForHeapStart());
 
-	// mDrawMode = 0/false for 2D rendering and 1/true for 3D rendering
-	T.Draw(cmdList, true);
+	for (int i = 0; i < 1; ++i) {
+		cmdList->RSSetViewports(1, &maShadowMapViewports[i]);
+		cmdList->RSSetScissorRects(1, &maShadowMapScissorRects[i]);
+
+		// mDrawMode = 0/false for 2D rendering and 1/true for 3D rendering
+		T.Draw(cmdList, true);
+	}
 
 	cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(mpShadowMap, D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE));
 }
@@ -684,12 +689,8 @@ void Scene::DrawTerrain(ID3D12GraphicsCommandList* cmdList) {
 		
 		PerFrameConstantBuffer constants;
 		constants.viewproj = C.GetViewProjectionMatrixTransposed();
-		float h = T.GetHeightMapDepth() / 2.0f;
-		float w = T.GetHeightMapWidth() / 2.0f;
-		constants.shadowviewproj = DNC.GetShadowViewProjectionMatrixTransposed(XMFLOAT3(w, h, 0.0f), sqrtf(w * w + h * h));
-		//constants.shadowviewproj = DNC.GetShadowViewProjectionMatrixTransposed(XMFLOAT3(64, 64, 360.0f), sqrtf(64 * 64 + 64 * 64));
-		constants.shadowtransform = DNC.GetShadowTransformMatrixTransposed(XMFLOAT3(w, h, 0.0f), sqrtf(w * w + h * h));
-		//constants.shadowtransform = DNC.GetShadowTransformMatrixTransposed(XMFLOAT3(64, 64, 360.0f), sqrtf(64 * 64 + 64 * 64));
+		constants.shadowmatrix = DNC.GetShadowViewProjMatrix();
+		constants.shadowtexmatrix = DNC.GetShadowViewProjTexMatrix();
 		constants.eye = C.GetEyePosition();
 		constants.frustum[0] = frustum[0];
 		constants.frustum[1] = frustum[1];
@@ -714,11 +715,9 @@ void Scene::Draw() {
 
 //	if (mDrawMode) {
 		// only render to the shadow map if we're rendering in 3D.
-		SetShadowMapRender(cmdList);
 		DrawShadowMap(cmdList);
 //	}
-
-
+		
 	// set a clear color.
 	const float clearColor[] = { 0.2f, 0.6f, 1.0f, 1.0f };
 	mpGFX->SetBackBufferRender(cmdList, clearColor);
@@ -733,8 +732,11 @@ void Scene::Draw() {
 }
 
 void Scene::Update() {
-	_sleep(2); // without this, smaller heightmaps were unable to animate correctly as frame rate too high so angle always ended up at 0.
-	DNC.Update();
+	_sleep(3); // without this, smaller heightmaps were unable to animate correctly as frame rate too high so angle always ended up at 0.
+	
+	float h = T.GetHeightMapDepth() / 2.0f;
+	float w = T.GetHeightMapWidth() / 2.0f;
+	DNC.Update(XMFLOAT3(w, h, 0.0f), sqrtf(w * w + h * h), &C);
 
 	Draw();
 }
