@@ -1,8 +1,7 @@
 cbuffer PerFrameData : register(b0)
 {
 	float4x4 viewproj;
-	float4x4 shadowmatrix;
-	float4x4 shadowtexmatrix;
+	float4x4 shadowtexmatrices[4];
 	float4 eye;
 	float4 frustum[6];
 }
@@ -22,9 +21,9 @@ SamplerState detailsampler : register(s1);
 struct DS_OUTPUT
 {
 	float4 pos : SV_POSITION;
-	float4 shadowpos : TEXCOORD0;
+	float4 shadowpos[4] : TEXCOORD0;
 	float3 worldpos : POSITION;
-	float2 tex : TEXCOORD1;
+	float2 tex : TEXCOORD4;
 };
 
 // Output control point
@@ -104,10 +103,14 @@ DS_OUTPUT main(
 	output.pos = float4(output.worldpos, 1.0f);
 	output.pos = mul(output.pos, viewproj);
 
-	// generate projective tex-coords to project shadow map onto scene.
-	output.shadowpos = float4(output.worldpos, 1.0f);
 	//output.shadowpos += float4(estimateNormal(output.tex) * 5.0f, 0.0f);
-	output.shadowpos = mul(output.shadowpos, shadowtexmatrix);
-	
+
+	[unroll]
+	for (int i = 0; i < 4; ++i) {
+		// generate projective tex-coords to project shadow map onto scene.
+		output.shadowpos[i] = float4(output.worldpos, 1.0f);
+
+		output.shadowpos[i] = mul(output.shadowpos[i], shadowtexmatrices[i]);
+	}
 	return output;
 }

@@ -1,10 +1,6 @@
-cbuffer PerFrameData : register(b0)
+cbuffer ShadowConstants : register(b2)
 {
-	float4x4 viewproj;
 	float4x4 shadowmatrix;
-	float4x4 shadowtexmatrix;
-	float4 eye;
-	float4 frustum[6];
 }
 
 cbuffer TerrainData : register(b1)

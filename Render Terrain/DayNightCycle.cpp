@@ -2,7 +2,7 @@
 DayNightCycle.cpp
 
 Author:			Chris Serson
-Last Edited:	August 15, 2016
+Last Edited:	August 18, 2016
 
 Description:	Class for managing the Day/Night Cycle for the scene.
 */
@@ -113,24 +113,90 @@ void DayNightCycle::Update(XMFLOAT3 centerBS, float radiusBS, Camera* cam) {
 }
 
 void DayNightCycle::CalculateShadowMatrices(XMFLOAT3 centerBS, float radiusBS, Camera* cam) {
-	XMFLOAT4 center;
-	float rad;
-	cam->GetBoundingSphereByNearFar(0.1f, 3000.0f, center, rad);
-	float radius = ceilf(rad);
+	//XMFLOAT4 center;
+	//float rad;
+	//cam->GetBoundingSphereByNearFar(0.1f, 3000.0f, center, rad);
+	//Frustum fCascade = cam->CalculateFrustumByNearFar(0.1f, 64.0f);
+	//float radius = ceilf(rad);
+	//float radius = ceilf(fCascade.radius);
 	LightSource light = mdlSun.GetLight();
 	XMVECTOR lightdir = XMLoadFloat3(&light.direction);
-	XMVECTOR targetpos = XMLoadFloat4(&center);
-	XMVECTOR lightpos = targetpos - lightdir;
+	//XMVECTOR targetpos = XMLoadFloat4(&center);
+	XMVECTOR targetpos = XMLoadFloat3(&centerBS);
+	//XMVECTOR targetpos = XMLoadFloat3(&fCascade.center);
+	XMVECTOR lightpos = targetpos - 2.0f * radiusBS * lightdir;
 
 	XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
 	up = XMVector3Cross(up, lightdir);
 
 	XMMATRIX V = XMMatrixLookAtLH(lightpos, targetpos, up); // light space view matrix transform bounding sphere to light space
 
+	// create the first three cascades.
+	for (int i = 0; i < 3; ++i) {
+		Frustum fCascade = cam->CalculateFrustumByNearFar(CASCADE_PLANES[i], CASCADE_PLANES[i + 1]);
+		float radius = ceilf(fCascade.radius);
+		radius *= (float)(mShadowMapSize + 6) / (float)mShadowMapSize; // add padding to projection for rounding and for pcf.
+		XMFLOAT4 spherecenterls;
+
+		//XMVECTOR c = XMLoadFloat4(&center);
+		XMVECTOR c = XMLoadFloat3(&fCascade.center);
+		XMStoreFloat4(&spherecenterls, XMVector3TransformCoord(c, V));
+
+		// orthographic frustum
+		float l = spherecenterls.x - radius;
+		float b = spherecenterls.y - radius;
+		float n = spherecenterls.z - radius;
+		float r = spherecenterls.x + radius;
+		float t = spherecenterls.y + radius;
+		float f = spherecenterls.z + radius;
+		XMMATRIX P = XMMatrixOrthographicOffCenterLH(l, r, b, t, n, f);
+
+		XMMATRIX S = V * P;
+
+		// add rounding to update shadowmap by texel-sized increments.
+		XMVECTOR shadowOrigin = XMVector3Transform(XMVectorZero(), S);
+		shadowOrigin *= ((float)mShadowMapSize / 2.0f);
+		XMFLOAT2 so;
+		XMStoreFloat2(&so, shadowOrigin);
+		XMVECTOR roundedOrigin = XMLoadFloat2(&XMFLOAT2(round(so.x), round(so.y)));
+		XMVECTOR rounding = roundedOrigin - shadowOrigin;
+		rounding /= (mShadowMapSize / 2.0f);
+		XMStoreFloat2(&so, rounding);
+		XMMATRIX roundMatrix = XMMatrixTranslation(so.x, so.y, 0.0f);
+		S *= roundMatrix;
+
+		XMStoreFloat4x4(&maShadowViewProjs[i], XMMatrixTranspose(S));
+
+		// transform NDC space [-1, +1]^2 to texture space [0, 1]^2
+		float x, y;
+		if (i == 0) {
+			x = 0.25f;
+			y = 0.25f;
+		} else if (i == 1) {
+			x = 0.25f;
+			y = 0.75f;
+		} else {
+			x = 0.75f;
+			y = 0.25f;
+		}
+		
+		XMMATRIX T(0.25f, 0.0f, 0.0f, 0.0f,
+			0.0f, -0.25f, 0.0f, 0.0f,
+			0.0f, 0.0f, 1.0f, 0.0f,
+			x, y, 0.0f, 1.0f);
+
+		S *= T;
+
+		XMStoreFloat4x4(&maShadowViewProjTexs[i], XMMatrixTranspose(S));
+	}
+
+	// create the fourth cascade as just a full scene shadow map.
+	float radius = ceilf(radiusBS);
 	radius *= (float)(mShadowMapSize + 6) / (float)mShadowMapSize; // add padding to projection for rounding and for pcf.
 	XMFLOAT4 spherecenterls;
 
-	XMVECTOR c = XMLoadFloat4(&center);
+	//XMVECTOR c = XMLoadFloat4(&center);
+	XMVECTOR c = XMLoadFloat3(&centerBS);
 	XMStoreFloat4(&spherecenterls, XMVector3TransformCoord(c, V));
 
 	// orthographic frustum
@@ -156,15 +222,14 @@ void DayNightCycle::CalculateShadowMatrices(XMFLOAT3 centerBS, float radiusBS, C
 	XMMATRIX roundMatrix = XMMatrixTranslation(so.x, so.y, 0.0f);
 	S *= roundMatrix;
 
-	XMStoreFloat4x4(&mmShadowViewProj, XMMatrixTranspose(S));
+	XMStoreFloat4x4(&maShadowViewProjs[3], XMMatrixTranspose(S));
 
 	// transform NDC space [-1, +1]^2 to texture space [0, 1]^2
-	XMMATRIX T(0.5f, 0.0f, 0.0f, 0.0f,
-		0.0f, -0.5f, 0.0f, 0.0f,
-		0.0f, 0.0f, 1.0f, 0.0f,
-		0.5f, 0.5f, 0.0f, 1.0f);
-
+	XMMATRIX T(0.25f,  0.0f, 0.0f, 0.0f,
+			   0.0f, -0.25f, 0.0f, 0.0f,
+			   0.0f,  0.0f, 1.0f, 0.0f,
+			   0.75f,  0.75f, 0.0f, 1.0f);
 	S *= T;
 
-	XMStoreFloat4x4(&mmShadowViewProjTex, XMMatrixTranspose(S));
+	XMStoreFloat4x4(&maShadowViewProjTexs[3], XMMatrixTranspose(S));
 }

@@ -12,8 +12,7 @@ struct LightData {
 cbuffer PerFrameData : register(b0)
 {
 	float4x4 viewproj;
-	float4x4 shadowmatrix;
-	float4x4 shadowtexmatrix;
+	float4x4 shadowtexmatrices[4];
 	float4 eye;
 	float4 frustum[6];
 	LightData light;
@@ -36,9 +35,9 @@ SamplerComparisonState shadowsampler : register(s2);
 struct DS_OUTPUT
 {
 	float4 pos : SV_POSITION;
-	float4 shadowpos : TEXCOORD0;
+	float4 shadowpos[4] : TEXCOORD0;
 	float3 worldpos : POSITION;
-    float2 tex : TEXCOORD1;
+    float2 tex : TEXCOORD4;
 };
 
 // shadow map constants
@@ -128,6 +127,23 @@ float calcShadowFactor(float4 shadowPosH) {
 	return percentLit / 9.0f;
 }
 
+float4 decideOnCascade(float4 shadowpos[4]) {
+	// if shadowpos[0].xy is in the range [0, 0.5], then this point is in the first cascade
+	if (max(abs(shadowpos[0].x - 0.25), abs(shadowpos[0].y - 0.25)) < 0.25) {
+		return shadowpos[0];
+	}
+
+	if (max(abs(shadowpos[1].x - 0.25), abs(shadowpos[1].y - 0.75)) < 0.25) {
+		return shadowpos[1];
+	}
+
+	if (max(abs(shadowpos[2].x - 0.75), abs(shadowpos[2].y - 0.25)) < 0.25) {
+		return shadowpos[2];
+	}
+	
+	return shadowpos[3];
+}
+
 // basic diffuse/ambient lighting
 float4 main(DS_OUTPUT input) : SV_TARGET
 {
@@ -144,7 +160,7 @@ float4 main(DS_OUTPUT input) : SV_TARGET
 
     float4 color = float4(0.22f, 0.72f, 0.31f, 1.0f);
 
-	float shadowfactor = calcShadowFactor(input.shadowpos);
+	float shadowfactor = calcShadowFactor(decideOnCascade(input.shadowpos));
 	float4 diffuse = max(shadowfactor, light.amb) * light.dif * dot(-light.dir, norm);
 	float3 V = reflect(light.dir, norm);
 	float3 toEye = normalize(eye.xyz - input.worldpos);

@@ -2,7 +2,7 @@
 DayNightCycle.h
 
 Author:			Chris Serson
-Last Edited:	August 15, 2016
+Last Edited:	August 18, 2016
 
 Description:	Class for managing the Day/Night Cycle for the scene.
 
@@ -55,6 +55,7 @@ static const XMFLOAT4 SUN_SPECULAR_COLORS[] = {
 	{ 0.0f, 0.0f, 0.0f, 1.0f },
 	{ 0.0f, 0.0f, 0.0f, 1.0f }
 };
+static const float CASCADE_PLANES[] = { 0.1f, 64.0f, 128.0f, 256.0f };
 
 class DayNightCycle {
 public:
@@ -65,8 +66,8 @@ public:
 	void TogglePause() { isPaused = !isPaused; }
 
 	LightSource GetLight() { return mdlSun.GetLight(); }
-	XMFLOAT4X4 GetShadowViewProjMatrix() { return mmShadowViewProj; }
-	XMFLOAT4X4 GetShadowViewProjTexMatrix() { return mmShadowViewProjTex; }
+	XMFLOAT4X4 GetShadowViewProjMatrix(int i) { return maShadowViewProjs[i]; }
+	XMFLOAT4X4 GetShadowViewProjTexMatrix(int i) { return maShadowViewProjTexs[i]; }
 
 private:
 	void CalculateShadowMatrices(XMFLOAT3 centerBS, float radiusBS, Camera* cam);
@@ -78,7 +79,7 @@ private:
 	float						mCurrentSunAngle = 0.0f;
 	bool						isPaused = false;
 	UINT						mShadowMapSize;
-	XMFLOAT4X4					mmShadowViewProj;
-	XMFLOAT4X4					mmShadowViewProjTex;
+	XMFLOAT4X4					maShadowViewProjs[4];
+	XMFLOAT4X4					maShadowViewProjTexs[4];
 };
 

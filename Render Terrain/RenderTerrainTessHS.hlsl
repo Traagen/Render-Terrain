@@ -1,8 +1,7 @@
 cbuffer PerFrameData : register(b0)
 {
 	float4x4 viewproj;
-	float4x4 shadowmatrix;
-	float4x4 shadowtexmatrix;
+	float4x4 shadowtexmatrices[4];
 	float4 eye;
 	float4 frustum[6];
 }

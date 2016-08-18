@@ -41,6 +41,7 @@ Scene::Scene(int height, int width, Graphics* GFX) : T(), C(height, width), DNC(
 	// Initialize everything needed for the shadow map.
 	InitDSVHeap();
 	InitShadowMap(2048, 2048);
+	InitShadowConstantBuffers();
 	InitPipelineShadowMap();
 	
 	// after creating and initializing the heightmap for the terrain, we need to close the command list
@@ -92,6 +93,15 @@ Scene::~Scene() {
 		mpShadowMap = nullptr;
 	}
 
+	for (int i = 0; i < 4; ++i) {
+		if (mpShadowConstants[i]) {
+			mpShadowConstants[i]->Unmap(0, nullptr);
+			maShadowConstantsMapped[i] = nullptr;
+			mpShadowConstants[i]->Release();
+			mpShadowConstants[i] = nullptr;
+		}
+	}
+
 	CleanupTemporaryBuffers();
 }
 
@@ -118,7 +128,7 @@ void Scene::InitSRVCBVHeap() {
 	D3D12_DESCRIPTOR_HEAP_DESC descCBVSRVHeap = {};
 
 	// create the SRV heap that points at the heightmap and CBV.
-	descCBVSRVHeap.NumDescriptors = 4;
+	descCBVSRVHeap.NumDescriptors = 8;
 	descCBVSRVHeap.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	descCBVSRVHeap.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
@@ -165,6 +175,32 @@ void Scene::InitPerFrameConstantBuffer() {
 	CD3DX12_RANGE rangeRead(0, 0); // we won't be reading from this resource
 	if (FAILED(mpPerFrameConstants->Map(0, &rangeRead, reinterpret_cast<void**>(&mpPerFrameConstantsMapped)))) {
 		throw (GFX_Exception("Failed to map Per Frame Constant Buffer."));
+	}
+}
+
+// Initialize a constant buffer for the shadow map;
+void Scene::InitShadowConstantBuffers() {
+	for (int i = 0; i < 4; ++i) {
+		// Create an upload buffer for the CBV
+		UINT64 sizeofBuffer = sizeof(ShadowMapShaderConstants);
+		mpGFX->CreateUploadBuffer(mpShadowConstants[i], &CD3DX12_RESOURCE_DESC::Buffer(sizeofBuffer));
+		mpPerFrameConstants->SetName(L"CBV for general per frame values.");
+
+		// Create the CBV itself
+		D3D12_CONSTANT_BUFFER_VIEW_DESC	descCBV = {};
+		descCBV.BufferLocation = mpShadowConstants[i]->GetGPUVirtualAddress();
+		descCBV.SizeInBytes = (sizeofBuffer + 255) & ~255; // CB size is required to be 256-byte aligned.
+
+		CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(mlDescriptorHeaps[0]->GetCPUDescriptorHandleForHeapStart(), 4 + i, msizeofCBVSRVDescHeapIncrement);
+
+		mpGFX->CreateCBV(&descCBV, srvHandle);
+
+		// initialize and map the constant buffers.
+		// per the DirectX 12 sample code, we can leave this mapped until we close.
+		CD3DX12_RANGE rangeRead(0, 0); // we won't be reading from this resource
+		if (FAILED(mpShadowConstants[i]->Map(0, &rangeRead, reinterpret_cast<void**>(&maShadowConstantsMapped[i])))) {
+			throw (GFX_Exception("Failed to map Per Frame Constant Buffer."));
+		}
 	}
 }
 
@@ -314,16 +350,19 @@ void Scene::InitPipelineTerrain3D() {
 void Scene::InitPipelineShadowMap() {
 	// set up the Root Signature.
 	// create a descriptor table with 2 entries for the descriptor heap containing our SRV to the heightmap and our CBV.
-	CD3DX12_ROOT_PARAMETER paramsRoot[2];
-	CD3DX12_DESCRIPTOR_RANGE rangesRoot[2];
+	CD3DX12_ROOT_PARAMETER paramsRoot[3];
+	CD3DX12_DESCRIPTOR_RANGE rangesRoot[3];
 	
 	// initialize a slot for the heightmap
 	rangesRoot[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
 	paramsRoot[0].InitAsDescriptorTable(1, &rangesRoot[0]);
 
 	// create a root parameter for our cbv
-	rangesRoot[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 2, 0);
+	rangesRoot[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 1);
 	paramsRoot[1].InitAsDescriptorTable(1, &rangesRoot[1]);
+
+	rangesRoot[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 2);
+	paramsRoot[2].InitAsDescriptorTable(1, &rangesRoot[2]);
 
 	// create our texture samplers for the heightmap.
 	CD3DX12_STATIC_SAMPLER_DESC	descSamplers[2];
@@ -556,8 +595,8 @@ void Scene::InitTerrainResources() {
 }
 
 void Scene::InitShadowMap(UINT width, UINT height) {
-	int w = width;
-	int h = height;
+	int w = width / 2;
+	int h = height / 2;
 	for (int i = 0; i < 2; ++i) {
 		for (int j = 0; j < 2; ++j) {
 			// create a viewport and scissor rectangle as the shadow map is likely of different dimensions than our normal view.
@@ -641,29 +680,22 @@ void Scene::DrawShadowMap(ID3D12GraphicsCommandList* cmdList) {
 	CD3DX12_GPU_DESCRIPTOR_HANDLE handleSRV(mlDescriptorHeaps[0]->GetGPUDescriptorHandleForHeapStart(), 2, msizeofCBVSRVDescHeapIncrement);
 	cmdList->SetGraphicsRootDescriptorTable(0, handleSRV);
 
-	// set the per frame constant buffer.
-	XMFLOAT4 frustum[6];
-	C.GetViewFrustum(frustum);
+	// set the terrain shader constants
+	CD3DX12_GPU_DESCRIPTOR_HANDLE handleCBV(mlDescriptorHeaps[0]->GetGPUDescriptorHandleForHeapStart(), 1, msizeofCBVSRVDescHeapIncrement);
+	cmdList->SetGraphicsRootDescriptorTable(1, handleCBV);
 
-	PerFrameConstantBuffer constants;
-	constants.viewproj = C.GetViewProjectionMatrixTransposed();
-	constants.shadowmatrix = DNC.GetShadowViewProjMatrix();
-	constants.eye = C.GetEyePosition();
-	constants.frustum[0] = frustum[0];
-	constants.frustum[1] = frustum[1];
-	constants.frustum[2] = frustum[2];
-	constants.frustum[3] = frustum[3];
-	constants.frustum[4] = frustum[4];
-	constants.frustum[5] = frustum[5];
-	constants.light = DNC.GetLight();
-	memcpy(mpPerFrameConstantsMapped, &constants, sizeof(PerFrameConstantBuffer));
-
-	cmdList->SetGraphicsRootDescriptorTable(1, mlDescriptorHeaps[0]->GetGPUDescriptorHandleForHeapStart());
-
-	for (int i = 0; i < 1; ++i) {
+	for (int i = 0; i < 4; ++i) {
 		cmdList->RSSetViewports(1, &maShadowMapViewports[i]);
 		cmdList->RSSetScissorRects(1, &maShadowMapScissorRects[i]);
 
+		// fill in this cascade's shadow constants.
+		ShadowMapShaderConstants constants;
+		constants.shadowViewProj = DNC.GetShadowViewProjMatrix(i);
+		constants.eye = C.GetEyePosition();
+		memcpy(maShadowConstantsMapped[i], &constants, sizeof(ShadowMapShaderConstants));
+		CD3DX12_GPU_DESCRIPTOR_HANDLE handleShadowCBV(mlDescriptorHeaps[0]->GetGPUDescriptorHandleForHeapStart(), 4 + i, msizeofCBVSRVDescHeapIncrement);
+
+		cmdList->SetGraphicsRootDescriptorTable(2, handleShadowCBV);
 		// mDrawMode = 0/false for 2D rendering and 1/true for 3D rendering
 		T.Draw(cmdList, true);
 	}
@@ -689,8 +721,9 @@ void Scene::DrawTerrain(ID3D12GraphicsCommandList* cmdList) {
 		
 		PerFrameConstantBuffer constants;
 		constants.viewproj = C.GetViewProjectionMatrixTransposed();
-		constants.shadowmatrix = DNC.GetShadowViewProjMatrix();
-		constants.shadowtexmatrix = DNC.GetShadowViewProjTexMatrix();
+		for (int i = 0; i < 4; ++i) {
+			constants.shadowtexmatrices[i] = DNC.GetShadowViewProjTexMatrix(i);
+		}
 		constants.eye = C.GetEyePosition();
 		constants.frustum[0] = frustum[0];
 		constants.frustum[1] = frustum[1];

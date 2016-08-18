@@ -2,7 +2,7 @@
 Scene.h
 
 Author:			Chris Serson
-Last Edited:	August 11, 2016
+Last Edited:	August 18, 2016
 
 Description:	Class for creating, managing, and rendering a scene.
 
@@ -32,11 +32,15 @@ enum InputKeys { _0 = 0x30, _1, _2, _3, _4, _5, _6, _7, _8, _9, _A = 0x41, _B, _
 
 struct PerFrameConstantBuffer {
 	XMFLOAT4X4	viewproj;
-	XMFLOAT4X4	shadowmatrix;
-	XMFLOAT4X4	shadowtexmatrix;
+	XMFLOAT4X4	shadowtexmatrices[4];
 	XMFLOAT4	eye;
 	XMFLOAT4	frustum[6];
 	LightSource light;
+};
+
+struct ShadowMapShaderConstants {
+	XMFLOAT4X4 shadowViewProj;
+	XMFLOAT4	eye;
 };
 
 struct TerrainShaderConstants {
@@ -72,7 +76,8 @@ private:
 	void InitDSVHeap();
 	// Initialize the per-frame constant buffer.
 	void InitPerFrameConstantBuffer();
-	
+	// Initialize a constant buffer for the shadow map;
+	void InitShadowConstantBuffers();
 	// Initialize the root signature and pipeline state object for rendering the terrain in 2D.
 	void InitPipelineTerrain2D();
 	// Initialize the root signature and pipeline state object for rendering the terrain in 3D.
@@ -105,7 +110,9 @@ private:
 	std::vector<ID3D12DescriptorHeap*>	mlDescriptorHeaps;
 	std::vector<ID3D12Resource*>		mlTemporaryUploadBuffers;
 	ID3D12Resource*						mpPerFrameConstants;
+	ID3D12Resource*						mpShadowConstants[4];
 	ID3D12Resource*						mpShadowMap;
 	PerFrameConstantBuffer*				mpPerFrameConstantsMapped;
+	ShadowMapShaderConstants*			maShadowConstantsMapped[4];
 };
 

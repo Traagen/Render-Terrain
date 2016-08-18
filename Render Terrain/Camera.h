@@ -2,7 +2,7 @@
 Camera.h
 
 Author:			Chris Serson
-Last Edited:	August 15, 2016
+Last Edited:	August 18, 2016
 
 Description:	Class for creating and controlling the camera
 
@@ -22,6 +22,19 @@ Future Work:	- I'm not 100% certain everything is correct when Roll is used. Wil
 #include <DirectXMath.h>
 
 using namespace DirectX;
+
+struct Frustum {
+	XMFLOAT3 nlb;
+	XMFLOAT3 nlt;
+	XMFLOAT3 nrb;
+	XMFLOAT3 nrt;
+	XMFLOAT3 flb;
+	XMFLOAT3 flt;
+	XMFLOAT3 frb;
+	XMFLOAT3 frt;
+	XMFLOAT3 center;
+	float radius;
+};
 
 class Camera
 {
@@ -45,6 +58,7 @@ public:
 	void Roll(float theta);
 	// calculate a bounding sphere center and radius for the current view matrix and the projection matrix defined by near/far.
 	void GetBoundingSphereByNearFar(float near, float far, XMFLOAT4& center, float& radius);
+	Frustum CalculateFrustumByNearFar(float near, float far);
 
 private:
 	void Update();
@@ -60,6 +74,8 @@ private:
 	XMFLOAT4	mvCurLeft;		// Current left vector
 	int			mWidth;
 	int			mHeight;
+	float		mHFOV;
+	float		mVFOV;
 	float		mYaw;
 	float		mPitch;
 	float		mRoll;

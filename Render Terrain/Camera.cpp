@@ -2,7 +2,7 @@
 Camera.cpp
 
 Author:			Chris Serson
-Last Edited:	August 15, 2016
+Last Edited:	August 18, 2016
 
 Description:	Class for creating and controlling the camera
 */
@@ -13,8 +13,11 @@ Camera::Camera(int h, int w) {
 	mYaw = mPitch = mRoll = 0.0f;
 	mWidth = w;
 	mHeight = h;
+	mHFOV = 60.0f;
+	mVFOV = mHFOV * (float)w / (float)h;
+
 	// build projection matrix
-	XMMATRIX proj = XMMatrixPerspectiveFovLH(XMConvertToRadians(60.0f), (float)w / (float)h, 0.1f, 3000.0f);
+	XMMATRIX proj = XMMatrixPerspectiveFovLH(XMConvertToRadians(mHFOV), (float)w / (float)h, 0.1f, 3000.0f);
 	XMStoreFloat4x4(&mmProjection, proj);
 
 	// set starting camera state
@@ -95,6 +98,8 @@ void Camera::GetViewFrustum(XMFLOAT4 planes[6]) {
 void Camera::GetBoundingSphereByNearFar(float near, float far, XMFLOAT4& center, float& radius) {
 	// get the current view matrix
 	XMMATRIX view = XMLoadFloat4x4(&mmView);
+	// get the original projection matrix
+	//XMMATRIX proj = XMLoadFloat4x4(&mmProjection);
 	// calculate the projection matrix based on the supplied near/far planes.
 	XMMATRIX proj = XMMatrixPerspectiveFovLH(XMConvertToRadians(60.0f), (float)mWidth / (float)mHeight, near, far);
 	XMMATRIX viewproj = view * proj;
@@ -150,6 +155,122 @@ void Camera::GetBoundingSphereByNearFar(float near, float far, XMFLOAT4& center,
 
 	XMStoreFloat(&radius, r);
 	XMStoreFloat4(&center, Circumcenter);
+}
+
+void FindBoundingSphere(XMFLOAT3 a, XMFLOAT3 b, XMFLOAT3 c, XMFLOAT3& center, float& radius) {
+	XMVECTOR _a = XMLoadFloat3(&a);
+	XMVECTOR _b = XMLoadFloat3(&b);
+	XMVECTOR _c = XMLoadFloat3(&c);
+	XMVECTOR ac = _c - _a;
+	XMVECTOR ab = _b - _a;
+	XMVECTOR N = XMVector3Normalize(XMVector3Cross(ab, ac));
+	XMVECTOR halfAB = _a + ab * 0.5f;
+	XMVECTOR halfAC = _a + ac * 0.5f;
+	XMVECTOR perpAB = XMVector3Normalize(XMVector3Cross(ab, N));
+	XMVECTOR perpAC = XMVector3Normalize(XMVector3Cross(ac, N));
+	// line,line intersection test. Line 1 origin: halfAB, direction: perpAB; Line 2 origin: halfAC, direction: perpAC
+	N = XMVector3Cross(perpAB, perpAC);
+	XMVECTOR SR = halfAB - halfAC;
+	XMFLOAT4 _N, _SR, _E;
+	XMStoreFloat4(&_N, N);
+	XMStoreFloat4(&_SR, SR);
+	XMStoreFloat4(&_E, perpAC);
+	float absX = fabs(_N.x);
+	float absY = fabs(_N.y);
+	float absZ = fabs(_N.z);
+	float t;
+	if (absZ > absX && absZ > absY) {
+		t = (_SR.x * _E.y - _SR.y * _E.x) / _N.z;
+	}
+	else if (absX > absY) {
+		t = (_SR.y * _E.z - _SR.z * _E.y) / _N.x;
+	}
+	else {
+		t = (_SR.z * _E.x - _SR.x * _E.z) / _N.y;
+	}
+
+	XMVECTOR Circumcenter = halfAB - t * perpAB;
+	XMVECTOR r = XMVector3Length(_c - Circumcenter);
+
+	XMStoreFloat(&radius, r);
+	XMStoreFloat3(&center, Circumcenter);
+}
+
+Frustum Camera::CalculateFrustumByNearFar(float near, float far) {
+	Frustum f;
+
+	float tanHalfHFOV = tanf(XMConvertToRadians(mHFOV / 2.0f));
+	float tanHalfVFOV = tanf(XMConvertToRadians(mVFOV / 2.0f));
+
+	float xNear = near * tanHalfHFOV;
+	float xFar = far * tanHalfHFOV;
+	float yNear = near * tanHalfVFOV;
+	float yFar = far * tanHalfVFOV;
+
+	f.nlb = XMFLOAT3(-xNear, -yNear, near);
+	f.nrb = XMFLOAT3( xNear, -yNear, near);
+	f.nlt = XMFLOAT3(-xNear,  yNear, near);
+	f.nrt = XMFLOAT3( xNear,  yNear, near);
+
+	f.flb = XMFLOAT3(-xFar, -yFar, far);
+	f.frb = XMFLOAT3( xFar, -yFar, far);
+	f.flt = XMFLOAT3(-xFar,  yFar, far);
+	f.frt = XMFLOAT3( xFar,  yFar, far);
+
+	// get the current view and projection matrices
+	XMMATRIX view = XMLoadFloat4x4(&mmView);
+	XMMATRIX viewproj = view;
+	XMMATRIX invViewProj = XMMatrixInverse(nullptr, viewproj); // the inverse view/projection matrix
+
+	XMVECTOR nlb = XMLoadFloat3(&f.nlb);
+	XMVECTOR nrb = XMLoadFloat3(&f.nrb);
+	XMVECTOR nlt = XMLoadFloat3(&f.nlt);
+	XMVECTOR nrt = XMLoadFloat3(&f.nrt);
+	XMVECTOR flb = XMLoadFloat3(&f.flb);
+	XMVECTOR frb = XMLoadFloat3(&f.frb);
+	XMVECTOR flt = XMLoadFloat3(&f.flt);
+	XMVECTOR frt = XMLoadFloat3(&f.frt);
+
+	nlb = XMVector3Transform(nlb, invViewProj);
+	nrb = XMVector3Transform(nrb, invViewProj);
+	nlt = XMVector3Transform(nlt, invViewProj);
+	nrt = XMVector3Transform(nrt, invViewProj);
+	flb = XMVector3Transform(flb, invViewProj);
+	frb = XMVector3Transform(frb, invViewProj);
+	flt = XMVector3Transform(flt, invViewProj);
+	frt = XMVector3Transform(frt, invViewProj);
+
+	XMFLOAT4 _nlb, _nrb, _nrt, _nlt, _flb, _frt, _frb, _flt;
+	XMStoreFloat4(&_nlb, nlb);
+	XMStoreFloat4(&_nrb, nrb);
+	XMStoreFloat4(&_nlt, nlt);
+	XMStoreFloat4(&_nrt, nrt);
+	XMStoreFloat4(&_flb, flb);
+	XMStoreFloat4(&_frb, frb);
+	XMStoreFloat4(&_flt, flt);
+	XMStoreFloat4(&_frt, frt);
+
+	nlb = nlb / _nlb.w;
+	nrb = nrb / _nrb.w;
+	nlt = nlt / _nlt.w;
+	nrt = nrt / _nrt.w;
+	flb = flb / _flb.w;
+	frb = frb / _frb.w;
+	flt = flt / _flt.w;
+	frt = frt / _frt.w;
+
+	XMStoreFloat3(&f.nlb, nlb);
+	XMStoreFloat3(&f.nrb, nrb);
+	XMStoreFloat3(&f.nlt, nlt);
+	XMStoreFloat3(&f.nrt, nrt);
+	XMStoreFloat3(&f.flb, flb);
+	XMStoreFloat3(&f.frb, frb);
+	XMStoreFloat3(&f.flt, flt);
+	XMStoreFloat3(&f.frt, frt);
+
+	FindBoundingSphere(f.nlb, f.flb, f.frt, f.center, f.radius);
+
+	return f;
 }
 
 // Move the camera along its 3 axis: mvStartLook (forward/backward), mvStartLeft (left/left), mvStartUp (up/down)
