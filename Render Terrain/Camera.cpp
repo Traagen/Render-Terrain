@@ -13,11 +13,11 @@ Camera::Camera(int h, int w) {
 	mYaw = mPitch = mRoll = 0.0f;
 	mWidth = w;
 	mHeight = h;
-	mHFOV = 60.0f;
-	mVFOV = mHFOV * (float)w / (float)h;
+	mVFOV = 60.0f;
+	mHFOV = mVFOV * (float)w / (float)h;
 
 	// build projection matrix
-	XMMATRIX proj = XMMatrixPerspectiveFovLH(XMConvertToRadians(mHFOV), (float)w / (float)h, 0.1f, 3000.0f);
+	XMMATRIX proj = XMMatrixPerspectiveFovLH(XMConvertToRadians(mVFOV), (float)w / (float)h, 0.1f, 3000.0f);
 	XMStoreFloat4x4(&mmProjection, proj);
 
 	// set starting camera state

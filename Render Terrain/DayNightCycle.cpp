@@ -113,42 +113,37 @@ void DayNightCycle::Update(XMFLOAT3 centerBS, float radiusBS, Camera* cam) {
 }
 
 void DayNightCycle::CalculateShadowMatrices(XMFLOAT3 centerBS, float radiusBS, Camera* cam) {
-	//XMFLOAT4 center;
-	//float rad;
-	//cam->GetBoundingSphereByNearFar(0.1f, 3000.0f, center, rad);
-	//Frustum fCascade = cam->CalculateFrustumByNearFar(0.1f, 64.0f);
-	//float radius = ceilf(rad);
-	//float radius = ceilf(fCascade.radius);
 	LightSource light = mdlSun.GetLight();
 	XMVECTOR lightdir = XMLoadFloat3(&light.direction);
-	//XMVECTOR targetpos = XMLoadFloat4(&center);
 	XMVECTOR targetpos = XMLoadFloat3(&centerBS);
-	//XMVECTOR targetpos = XMLoadFloat3(&fCascade.center);
-	XMVECTOR lightpos = targetpos - 2.0f * radiusBS * lightdir;
+	
+	float offset = (float)(mShadowMapSize + 6) / (float)mShadowMapSize; // add padding to projection for rounding and for pcf.
+	float radiusScene = ceilf(radiusBS) * offset;
+
+	XMVECTOR lightpos = targetpos - 2.0f * radiusScene * lightdir;
 
 	XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
 	up = XMVector3Cross(up, lightdir);
 
 	XMMATRIX V = XMMatrixLookAtLH(lightpos, targetpos, up); // light space view matrix transform bounding sphere to light space
+	XMFLOAT4 spherecenterls;
 
 	// create the first three cascades.
 	for (int i = 0; i < 3; ++i) {
 		Frustum fCascade = cam->CalculateFrustumByNearFar(CASCADE_PLANES[i], CASCADE_PLANES[i + 1]);
 		float radius = ceilf(fCascade.radius);
-		radius *= (float)(mShadowMapSize + 6) / (float)mShadowMapSize; // add padding to projection for rounding and for pcf.
-		XMFLOAT4 spherecenterls;
-
-		//XMVECTOR c = XMLoadFloat4(&center);
+		radius *= offset;
+		
 		XMVECTOR c = XMLoadFloat3(&fCascade.center);
 		XMStoreFloat4(&spherecenterls, XMVector3TransformCoord(c, V));
 
 		// orthographic frustum
 		float l = spherecenterls.x - radius;
 		float b = spherecenterls.y - radius;
-		float n = spherecenterls.z - radius;
+		float n = spherecenterls.z - radiusScene;
 		float r = spherecenterls.x + radius;
 		float t = spherecenterls.y + radius;
-		float f = spherecenterls.z + radius;
+		float f = spherecenterls.z + radiusScene;
 		XMMATRIX P = XMMatrixOrthographicOffCenterLH(l, r, b, t, n, f);
 
 		XMMATRIX S = V * P;
@@ -191,21 +186,16 @@ void DayNightCycle::CalculateShadowMatrices(XMFLOAT3 centerBS, float radiusBS, C
 	}
 
 	// create the fourth cascade as just a full scene shadow map.
-	float radius = ceilf(radiusBS);
-	radius *= (float)(mShadowMapSize + 6) / (float)mShadowMapSize; // add padding to projection for rounding and for pcf.
-	XMFLOAT4 spherecenterls;
-
-	//XMVECTOR c = XMLoadFloat4(&center);
 	XMVECTOR c = XMLoadFloat3(&centerBS);
 	XMStoreFloat4(&spherecenterls, XMVector3TransformCoord(c, V));
 
 	// orthographic frustum
-	float l = spherecenterls.x - radius;
-	float b = spherecenterls.y - radius;
-	float n = spherecenterls.z - radius;
-	float r = spherecenterls.x + radius;
-	float t = spherecenterls.y + radius;
-	float f = spherecenterls.z + radius;
+	float l = spherecenterls.x - radiusScene;
+	float b = spherecenterls.y - radiusScene;
+	float n = spherecenterls.z - radiusScene;
+	float r = spherecenterls.x + radiusScene;
+	float t = spherecenterls.y + radiusScene;
+	float f = spherecenterls.z + radiusScene;
 	XMMATRIX P = XMMatrixOrthographicOffCenterLH(l, r, b, t, n, f);
 
 	XMMATRIX S = V * P;
@@ -215,6 +205,7 @@ void DayNightCycle::CalculateShadowMatrices(XMFLOAT3 centerBS, float radiusBS, C
 	shadowOrigin *= ((float)mShadowMapSize / 2.0f);
 	XMFLOAT2 so;
 	XMStoreFloat2(&so, shadowOrigin);
+
 	XMVECTOR roundedOrigin = XMLoadFloat2(&XMFLOAT2(round(so.x), round(so.y)));
 	XMVECTOR rounding = roundedOrigin - shadowOrigin;
 	rounding /= (mShadowMapSize / 2.0f);
@@ -233,3 +224,4 @@ void DayNightCycle::CalculateShadowMatrices(XMFLOAT3 centerBS, float radiusBS, C
 
 	XMStoreFloat4x4(&maShadowViewProjTexs[3], XMMatrixTranspose(S));
 }
+

@@ -158,7 +158,7 @@ float4 main(DS_OUTPUT input) : SV_TARGET
 //	float3 viewvector = eye.xyz - input.worldpos;
 //	norm = perturb_normal(norm, viewvector, input.tex * 256.0f);
 
-    float4 color = float4(0.22f, 0.72f, 0.31f, 1.0f);
+	float4 color = float4(0.22f, 0.72f, 0.31f, 1.0f);
 
 	float shadowfactor = calcShadowFactor(decideOnCascade(input.shadowpos));
 	float4 diffuse = max(shadowfactor, light.amb) * light.dif * dot(-light.dir, norm);
