@@ -2,7 +2,7 @@
 DayNightCycle.h
 
 Author:			Chris Serson
-Last Edited:	August 18, 2016
+Last Edited:	August 22, 2016
 
 Description:	Class for managing the Day/Night Cycle for the scene.
 
@@ -71,7 +71,7 @@ public:
 
 private:
 	void CalculateShadowMatrices(XMFLOAT3 centerBS, float radiusBS, Camera* cam);
-	
+		
 	UINT						mPeriod;	// the number of game milliseconds that each real time millisecond should count as.
 	DirectionalLight			mdlSun;		// light source representing the sun. 
 	DirectionalLight			mdlMoon;	// light source representing the moon.

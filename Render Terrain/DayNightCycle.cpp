@@ -2,7 +2,7 @@
 DayNightCycle.cpp
 
 Author:			Chris Serson
-Last Edited:	August 18, 2016
+Last Edited:	August 22, 2016
 
 Description:	Class for managing the Day/Night Cycle for the scene.
 */
@@ -117,11 +117,10 @@ void DayNightCycle::CalculateShadowMatrices(XMFLOAT3 centerBS, float radiusBS, C
 	XMVECTOR lightdir = XMLoadFloat3(&light.direction);
 	XMVECTOR targetpos = XMLoadFloat3(&centerBS);
 	
-	float offset = (float)(mShadowMapSize + 6) / (float)mShadowMapSize; // add padding to projection for rounding and for pcf.
+	float offset = (float)(mShadowMapSize + 8) / (float)mShadowMapSize; // add padding to projection for rounding and for pcf.
 	float radiusScene = ceilf(radiusBS) * offset;
 
 	XMVECTOR lightpos = targetpos - 2.0f * radiusScene * lightdir;
-
 	XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
 	up = XMVector3Cross(up, lightdir);
 
@@ -133,7 +132,6 @@ void DayNightCycle::CalculateShadowMatrices(XMFLOAT3 centerBS, float radiusBS, C
 		Frustum fCascade = cam->CalculateFrustumByNearFar(CASCADE_PLANES[i], CASCADE_PLANES[i + 1]);
 		float radius = ceilf(fCascade.radius);
 		radius *= offset;
-		
 		XMVECTOR c = XMLoadFloat3(&fCascade.center);
 		XMStoreFloat4(&spherecenterls, XMVector3TransformCoord(c, V));
 
@@ -144,22 +142,23 @@ void DayNightCycle::CalculateShadowMatrices(XMFLOAT3 centerBS, float radiusBS, C
 		float r = spherecenterls.x + radius;
 		float t = spherecenterls.y + radius;
 		float f = spherecenterls.z + radiusScene;
+
 		XMMATRIX P = XMMatrixOrthographicOffCenterLH(l, r, b, t, n, f);
 
 		XMMATRIX S = V * P;
 
 		// add rounding to update shadowmap by texel-sized increments.
 		XMVECTOR shadowOrigin = XMVector3Transform(XMVectorZero(), S);
-		shadowOrigin *= ((float)mShadowMapSize / 2.0f);
+		shadowOrigin *= ((float)(mShadowMapSize + offset) / 4.0f);
 		XMFLOAT2 so;
 		XMStoreFloat2(&so, shadowOrigin);
 		XMVECTOR roundedOrigin = XMLoadFloat2(&XMFLOAT2(round(so.x), round(so.y)));
 		XMVECTOR rounding = roundedOrigin - shadowOrigin;
-		rounding /= (mShadowMapSize / 2.0f);
+		rounding /= ((mShadowMapSize + offset) / 4.0f);
 		XMStoreFloat2(&so, rounding);
 		XMMATRIX roundMatrix = XMMatrixTranslation(so.x, so.y, 0.0f);
 		S *= roundMatrix;
-
+		
 		XMStoreFloat4x4(&maShadowViewProjs[i], XMMatrixTranspose(S));
 
 		// transform NDC space [-1, +1]^2 to texture space [0, 1]^2
@@ -202,17 +201,17 @@ void DayNightCycle::CalculateShadowMatrices(XMFLOAT3 centerBS, float radiusBS, C
 
 	// add rounding to update shadowmap by texel-sized increments.
 	XMVECTOR shadowOrigin = XMVector3Transform(XMVectorZero(), S);
-	shadowOrigin *= ((float)mShadowMapSize / 2.0f);
+	shadowOrigin *= ((float)mShadowMapSize / 4.0f);
 	XMFLOAT2 so;
 	XMStoreFloat2(&so, shadowOrigin);
 
 	XMVECTOR roundedOrigin = XMLoadFloat2(&XMFLOAT2(round(so.x), round(so.y)));
 	XMVECTOR rounding = roundedOrigin - shadowOrigin;
-	rounding /= (mShadowMapSize / 2.0f);
+	rounding /= (mShadowMapSize / 4.0f);
 	XMStoreFloat2(&so, rounding);
 	XMMATRIX roundMatrix = XMMatrixTranslation(so.x, so.y, 0.0f);
 	S *= roundMatrix;
-
+	
 	XMStoreFloat4x4(&maShadowViewProjs[3], XMMatrixTranspose(S));
 
 	// transform NDC space [-1, +1]^2 to texture space [0, 1]^2
@@ -224,4 +223,3 @@ void DayNightCycle::CalculateShadowMatrices(XMFLOAT3 centerBS, float radiusBS, C
 
 	XMStoreFloat4x4(&maShadowViewProjTexs[3], XMMatrixTranspose(S));
 }
-

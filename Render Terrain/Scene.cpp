@@ -2,19 +2,25 @@
 Scene.cpp
 
 Author:			Chris Serson
-Last Edited:	August 15, 2016
+Last Edited:	August 23, 2016
 
 Description:	Class for creating, managing, and rendering a scene.
 */
 #include "Scene.h"
 #include<stdlib.h>
 
-Scene::Scene(int height, int width, Graphics* GFX) : T(), C(height, width), DNC(6000, 2048) {
+Scene::Scene(int height, int width, Graphics* GFX) : T(), C(height, width), DNC(6000, 4096) {
 	mpGFX = GFX;
 	mDrawMode = 0;
 
-	mpPerFrameConstants = nullptr;
-	mpShadowMap = nullptr;
+	for (int i = 0; i < 3; ++i) {
+		mpShadowMap[i] = nullptr;
+		mpPerFrameConstants[i] = nullptr;
+		
+		for (int j = 0; j < 4; ++j) {
+			mpShadowConstants[i][j] = nullptr;
+		}
+	}
 
 	// create a viewport and scissor rectangle.
 	mViewport.TopLeftX = 0;
@@ -40,7 +46,7 @@ Scene::Scene(int height, int width, Graphics* GFX) : T(), C(height, width), DNC(
 
 	// Initialize everything needed for the shadow map.
 	InitDSVHeap();
-	InitShadowMap(2048, 2048);
+	InitShadowMap(4096, 4096);
 	InitShadowConstantBuffers();
 	InitPipelineShadowMap();
 	
@@ -81,24 +87,26 @@ Scene::~Scene() {
 		mlDescriptorHeaps.pop_back();
 	}
 
-	if (mpPerFrameConstants) {
-		mpPerFrameConstants->Unmap(0, nullptr);
-		mpPerFrameConstantsMapped = nullptr;
-		mpPerFrameConstants->Release();
-		mpPerFrameConstants = nullptr;
-	}
+	for (int i = 0; i < 3; ++i) {
+		if (mpShadowMap[i]) {
+			mpShadowMap[i]->Release();
+			mpShadowMap[i] = nullptr;
+		}
 
-	if (mpShadowMap) {
-		mpShadowMap->Release();
-		mpShadowMap = nullptr;
-	}
+		if (mpPerFrameConstants[i]) {
+			mpPerFrameConstants[i]->Unmap(0, nullptr);
+			mpPerFrameConstantsMapped[i] = nullptr;
+			mpPerFrameConstants[i]->Release();
+			mpPerFrameConstants[i] = nullptr;
+		}
 
-	for (int i = 0; i < 4; ++i) {
-		if (mpShadowConstants[i]) {
-			mpShadowConstants[i]->Unmap(0, nullptr);
-			maShadowConstantsMapped[i] = nullptr;
-			mpShadowConstants[i]->Release();
-			mpShadowConstants[i] = nullptr;
+		for (int j = 0; j < 4; ++j) {
+			if (mpShadowConstants[i][j]) {
+				mpShadowConstants[i][j]->Unmap(0, nullptr);
+				maShadowConstantsMapped[i][j] = nullptr;
+				mpShadowConstants[i][j]->Release();
+				mpShadowConstants[i][j] = nullptr;
+			}
 		}
 	}
 
@@ -128,7 +136,7 @@ void Scene::InitSRVCBVHeap() {
 	D3D12_DESCRIPTOR_HEAP_DESC descCBVSRVHeap = {};
 
 	// create the SRV heap that points at the heightmap and CBV.
-	descCBVSRVHeap.NumDescriptors = 8;
+	descCBVSRVHeap.NumDescriptors = 21;
 	descCBVSRVHeap.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	descCBVSRVHeap.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
@@ -144,7 +152,7 @@ void Scene::InitDSVHeap() {
 	D3D12_DESCRIPTOR_HEAP_DESC descDSVHeap = {};
 	// Each frame has its own depth stencils (to write shadows onto) 
 	// and then there is one for the scene itself.
-	descDSVHeap.NumDescriptors = 1;
+	descDSVHeap.NumDescriptors = 3;
 	descDSVHeap.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
 	descDSVHeap.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
 
@@ -156,50 +164,54 @@ void Scene::InitDSVHeap() {
 
 // Initialize the per-frame constant buffer.
 void Scene::InitPerFrameConstantBuffer() {
-	// Create an upload buffer for the CBV
-	UINT64 sizeofBuffer = sizeof(PerFrameConstantBuffer);
-	mpGFX->CreateUploadBuffer(mpPerFrameConstants, &CD3DX12_RESOURCE_DESC::Buffer(sizeofBuffer));
-	mpPerFrameConstants->SetName(L"CBV for general per frame values.");
-
-	// Create the CBV itself
-	D3D12_CONSTANT_BUFFER_VIEW_DESC	descCBV = {};
-	descCBV.BufferLocation = mpPerFrameConstants->GetGPUVirtualAddress();
-	descCBV.SizeInBytes = (sizeofBuffer + 255) & ~255; // CB size is required to be 256-byte aligned.
-
-	CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(mlDescriptorHeaps[0]->GetCPUDescriptorHandleForHeapStart(), 0, msizeofCBVSRVDescHeapIncrement);
-
-	mpGFX->CreateCBV(&descCBV, srvHandle);
-
-	// initialize and map the constant buffers.
-	// per the DirectX 12 sample code, we can leave this mapped until we close.
-	CD3DX12_RANGE rangeRead(0, 0); // we won't be reading from this resource
-	if (FAILED(mpPerFrameConstants->Map(0, &rangeRead, reinterpret_cast<void**>(&mpPerFrameConstantsMapped)))) {
-		throw (GFX_Exception("Failed to map Per Frame Constant Buffer."));
-	}
-}
-
-// Initialize a constant buffer for the shadow map;
-void Scene::InitShadowConstantBuffers() {
-	for (int i = 0; i < 4; ++i) {
+	for (int i = 0; i < 3; ++i) {
 		// Create an upload buffer for the CBV
-		UINT64 sizeofBuffer = sizeof(ShadowMapShaderConstants);
-		mpGFX->CreateUploadBuffer(mpShadowConstants[i], &CD3DX12_RESOURCE_DESC::Buffer(sizeofBuffer));
-		mpPerFrameConstants->SetName(L"CBV for general per frame values.");
+		UINT64 sizeofBuffer = sizeof(PerFrameConstantBuffer);
+		mpGFX->CreateUploadBuffer(mpPerFrameConstants[i], &CD3DX12_RESOURCE_DESC::Buffer(sizeofBuffer));
+		mpPerFrameConstants[i]->SetName(L"CBV for general per frame values.");
 
 		// Create the CBV itself
 		D3D12_CONSTANT_BUFFER_VIEW_DESC	descCBV = {};
-		descCBV.BufferLocation = mpShadowConstants[i]->GetGPUVirtualAddress();
+		descCBV.BufferLocation = mpPerFrameConstants[i]->GetGPUVirtualAddress();
 		descCBV.SizeInBytes = (sizeofBuffer + 255) & ~255; // CB size is required to be 256-byte aligned.
 
-		CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(mlDescriptorHeaps[0]->GetCPUDescriptorHandleForHeapStart(), 4 + i, msizeofCBVSRVDescHeapIncrement);
+		CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(mlDescriptorHeaps[0]->GetCPUDescriptorHandleForHeapStart(), 2 + i, msizeofCBVSRVDescHeapIncrement);
 
 		mpGFX->CreateCBV(&descCBV, srvHandle);
 
 		// initialize and map the constant buffers.
 		// per the DirectX 12 sample code, we can leave this mapped until we close.
 		CD3DX12_RANGE rangeRead(0, 0); // we won't be reading from this resource
-		if (FAILED(mpShadowConstants[i]->Map(0, &rangeRead, reinterpret_cast<void**>(&maShadowConstantsMapped[i])))) {
+		if (FAILED(mpPerFrameConstants[i]->Map(0, &rangeRead, reinterpret_cast<void**>(&mpPerFrameConstantsMapped[i])))) {
 			throw (GFX_Exception("Failed to map Per Frame Constant Buffer."));
+		}
+	}
+}
+
+// Initialize a constant buffer for the shadow map;
+void Scene::InitShadowConstantBuffers() {
+	for (int i = 0; i < 3; ++i) {
+		for (int j = 0; j < 4; ++j) {
+			// Create an upload buffer for the CBV
+			UINT64 sizeofBuffer = sizeof(ShadowMapShaderConstants);
+			mpGFX->CreateUploadBuffer(mpShadowConstants[i][j], &CD3DX12_RESOURCE_DESC::Buffer(sizeofBuffer));
+			mpShadowConstants[i][j]->SetName(L"CBV for general per frame values.");
+
+			// Create the CBV itself
+			D3D12_CONSTANT_BUFFER_VIEW_DESC	descCBV = {};
+			descCBV.BufferLocation = mpShadowConstants[i][j]->GetGPUVirtualAddress();
+			descCBV.SizeInBytes = (sizeofBuffer + 255) & ~255; // CB size is required to be 256-byte aligned.
+
+			CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(mlDescriptorHeaps[0]->GetCPUDescriptorHandleForHeapStart(), 5 + i * 4 + j, msizeofCBVSRVDescHeapIncrement);
+
+			mpGFX->CreateCBV(&descCBV, srvHandle);
+
+			// initialize and map the constant buffers.
+			// per the DirectX 12 sample code, we can leave this mapped until we close.
+			CD3DX12_RANGE rangeRead(0, 0); // we won't be reading from this resource
+			if (FAILED(mpShadowConstants[i][j]->Map(0, &rangeRead, reinterpret_cast<void**>(&maShadowConstantsMapped[i][j])))) {
+				throw (GFX_Exception("Failed to map Shadow Constant Buffer."));
+			}
 		}
 	}
 }
@@ -208,18 +220,21 @@ void Scene::InitShadowConstantBuffers() {
 void Scene::InitPipelineTerrain2D() {
 	// set up the Root Signature.
 	// create a descriptor table with 1 entry for the descriptor heap containing our SRV to the heightmap.
-	CD3DX12_DESCRIPTOR_RANGE rangeRoot;
-	CD3DX12_ROOT_PARAMETER paramsRoot[1];
-	rangeRoot.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 0);
-	paramsRoot[0].InitAsDescriptorTable(1, &rangeRoot);
+	CD3DX12_DESCRIPTOR_RANGE rangeRoot[2];
+	CD3DX12_ROOT_PARAMETER paramsRoot[2];
+	rangeRoot[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+	paramsRoot[0].InitAsDescriptorTable(1, &rangeRoot[0]);
 
+	rangeRoot[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
+	paramsRoot[1].InitAsDescriptorTable(1, &rangeRoot[1]);
+	
 	// create our texture sampler for the heightmap.
 	CD3DX12_STATIC_SAMPLER_DESC	descSamplers[1];
 	descSamplers[0].Init(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
 
 	// It isn't really necessary to deny the other shaders access, but it does technically allow the GPU to optimize more.
 	CD3DX12_ROOT_SIGNATURE_DESC	descRoot;
-	descRoot.Init(1, paramsRoot, 1, descSamplers, D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
+	descRoot.Init(2, paramsRoot, 1, descSamplers, D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
 		D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
 		D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
 		D3D12_ROOT_SIGNATURE_FLAG_DENY_VERTEX_SHADER_ROOT_ACCESS);
@@ -260,16 +275,23 @@ void Scene::InitPipelineTerrain2D() {
 void Scene::InitPipelineTerrain3D() {
 	// set up the Root Signature.
 	// create a descriptor table.
-	CD3DX12_ROOT_PARAMETER paramsRoot[2];
-	CD3DX12_DESCRIPTOR_RANGE rangesRoot[2];
+	CD3DX12_ROOT_PARAMETER paramsRoot[4];
+	CD3DX12_DESCRIPTOR_RANGE rangesRoot[4];
 	
-	// initialize a slot for the heightmap and shadowmap
-	rangesRoot[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 0);
+	// initialize a slot for the heightmap 
+	rangesRoot[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
 	paramsRoot[0].InitAsDescriptorTable(1, &rangesRoot[0]);
+	
+	// create a slot for the shadow map.
+	rangesRoot[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
+	paramsRoot[1].InitAsDescriptorTable(1, &rangesRoot[1]);
 
 	// create a root parameter for our per frame constants
-	rangesRoot[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 2, 0);
-	paramsRoot[1].InitAsDescriptorTable(1, &rangesRoot[1]);
+	rangesRoot[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0);
+	paramsRoot[2].InitAsDescriptorTable(1, &rangesRoot[2]);
+
+	rangesRoot[3].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 1);
+	paramsRoot[3].InitAsDescriptorTable(1, &rangesRoot[3]);
 
 	// create our texture samplers for the heightmap.
 	CD3DX12_STATIC_SAMPLER_DESC	descSamplers[3];
@@ -423,9 +445,9 @@ void Scene::InitPipelineShadowMap() {
 	descPSO.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
 	descPSO.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
 	descPSO.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
-	descPSO.RasterizerState.DepthBias = 25000;
+	descPSO.RasterizerState.DepthBias = 10000;
 	descPSO.RasterizerState.DepthBiasClamp = 0.0f;
-	descPSO.RasterizerState.SlopeScaledDepthBias = 3.5f;
+	descPSO.RasterizerState.SlopeScaledDepthBias = 1.0f;
 	descPSO.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
 	descPSO.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
 
@@ -589,7 +611,7 @@ void Scene::InitTerrainResources() {
 	descSRV.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 	descSRV.Texture2D.MipLevels = descTex.MipLevels;
 	
-	CD3DX12_CPU_DESCRIPTOR_HANDLE handleSRV(mlDescriptorHeaps[0]->GetCPUDescriptorHandleForHeapStart(), 2, msizeofCBVSRVDescHeapIncrement);
+	CD3DX12_CPU_DESCRIPTOR_HANDLE handleSRV(mlDescriptorHeaps[0]->GetCPUDescriptorHandleForHeapStart(), 0, msizeofCBVSRVDescHeapIncrement);
 	mpGFX->CreateSRV(heightmap, &descSRV, handleSRV);
 	T.SetHeightmapResource(heightmap);
 }
@@ -633,18 +655,12 @@ void Scene::InitShadowMap(UINT width, UINT height) {
 	clearValue.DepthStencil.Depth = 1.0f;
 	clearValue.DepthStencil.Stencil = 0;
 
-	mpGFX->CreateCommittedResource(mpShadowMap, &descTex, &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT), D3D12_HEAP_FLAG_NONE, 
-		D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, &clearValue);
-	mpShadowMap->SetName(L"Shadow Map Texture Buffer");
-	
 	D3D12_DEPTH_STENCIL_VIEW_DESC descDSV = {};
 	descDSV.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
 	descDSV.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
 	descDSV.Texture2D.MipSlice = 0;
 	descDSV.Flags = D3D12_DSV_FLAG_NONE;
 	
-	mpGFX->CreateDSV(mpShadowMap, &descDSV, mlDescriptorHeaps[1]->GetCPUDescriptorHandleForHeapStart());
-
 	// Create the SRV for the heightmap texture and save to Terrain object.
 	D3D12_SHADER_RESOURCE_VIEW_DESC	descSRV = {};
 	descSRV.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
@@ -655,8 +671,19 @@ void Scene::InitShadowMap(UINT width, UINT height) {
 	descSRV.Texture2D.ResourceMinLODClamp = 0.0f;
 	descSRV.Texture2D.PlaneSlice = 0;
 
-	CD3DX12_CPU_DESCRIPTOR_HANDLE handleSRV(mlDescriptorHeaps[0]->GetCPUDescriptorHandleForHeapStart(), 3, msizeofCBVSRVDescHeapIncrement);
-	mpGFX->CreateSRV(mpShadowMap, &descSRV, handleSRV);
+	msizeofDSVDescHeapIncrement = mpGFX->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+
+	for (int i = 0; i < 3; ++i) {
+		mpGFX->CreateCommittedResource(mpShadowMap[i], &descTex, &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT), D3D12_HEAP_FLAG_NONE,
+			D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, &clearValue);
+		mpShadowMap[i]->SetName(L"Shadow Map Texture Buffer");
+
+		CD3DX12_CPU_DESCRIPTOR_HANDLE handleDSV(mlDescriptorHeaps[1]->GetCPUDescriptorHandleForHeapStart(), i, msizeofDSVDescHeapIncrement);
+		mpGFX->CreateDSV(mpShadowMap[i], &descDSV, handleDSV);
+
+		CD3DX12_CPU_DESCRIPTOR_HANDLE handleSRV(mlDescriptorHeaps[0]->GetCPUDescriptorHandleForHeapStart(), 17 + i, msizeofCBVSRVDescHeapIncrement);
+		mpGFX->CreateSRV(mpShadowMap[i], &descSRV, handleSRV);
+	}
 }
 
 void Scene::SetViewport(ID3D12GraphicsCommandList* cmdList) {
@@ -665,10 +692,11 @@ void Scene::SetViewport(ID3D12GraphicsCommandList* cmdList) {
 }
 
 void Scene::DrawShadowMap(ID3D12GraphicsCommandList* cmdList) {
-	cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(mpShadowMap, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_DEPTH_WRITE));
+	cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(mpShadowMap[mFrame], D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_DEPTH_WRITE));
 
-	cmdList->ClearDepthStencilView(mlDescriptorHeaps[1]->GetCPUDescriptorHandleForHeapStart(), D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
-	cmdList->OMSetRenderTargets(0, nullptr, false, &mlDescriptorHeaps[1]->GetCPUDescriptorHandleForHeapStart());
+	CD3DX12_CPU_DESCRIPTOR_HANDLE handleDSV(mlDescriptorHeaps[1]->GetCPUDescriptorHandleForHeapStart(), mFrame, msizeofDSVDescHeapIncrement);
+	cmdList->ClearDepthStencilView(handleDSV, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+	cmdList->OMSetRenderTargets(0, nullptr, false, &handleDSV);
 
 	cmdList->SetPipelineState(mlPSOs[2]);
 	cmdList->SetGraphicsRootSignature(mlRootSigs[2]);
@@ -677,7 +705,7 @@ void Scene::DrawShadowMap(ID3D12GraphicsCommandList* cmdList) {
 	cmdList->SetDescriptorHeaps(_countof(heaps), heaps);
 
 	// set the srv buffer.
-	CD3DX12_GPU_DESCRIPTOR_HANDLE handleSRV(mlDescriptorHeaps[0]->GetGPUDescriptorHandleForHeapStart(), 2, msizeofCBVSRVDescHeapIncrement);
+	CD3DX12_GPU_DESCRIPTOR_HANDLE handleSRV(mlDescriptorHeaps[0]->GetGPUDescriptorHandleForHeapStart(), 0, msizeofCBVSRVDescHeapIncrement);
 	cmdList->SetGraphicsRootDescriptorTable(0, handleSRV);
 
 	// set the terrain shader constants
@@ -692,15 +720,15 @@ void Scene::DrawShadowMap(ID3D12GraphicsCommandList* cmdList) {
 		ShadowMapShaderConstants constants;
 		constants.shadowViewProj = DNC.GetShadowViewProjMatrix(i);
 		constants.eye = C.GetEyePosition();
-		memcpy(maShadowConstantsMapped[i], &constants, sizeof(ShadowMapShaderConstants));
-		CD3DX12_GPU_DESCRIPTOR_HANDLE handleShadowCBV(mlDescriptorHeaps[0]->GetGPUDescriptorHandleForHeapStart(), 4 + i, msizeofCBVSRVDescHeapIncrement);
+		memcpy(maShadowConstantsMapped[mFrame][i], &constants, sizeof(ShadowMapShaderConstants));
+		CD3DX12_GPU_DESCRIPTOR_HANDLE handleShadowCBV(mlDescriptorHeaps[0]->GetGPUDescriptorHandleForHeapStart(), 5 + mFrame * 4 + i, msizeofCBVSRVDescHeapIncrement);
 
 		cmdList->SetGraphicsRootDescriptorTable(2, handleShadowCBV);
 		// mDrawMode = 0/false for 2D rendering and 1/true for 3D rendering
 		T.Draw(cmdList, true);
 	}
 
-	cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(mpShadowMap, D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE));
+	cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(mpShadowMap[mFrame], D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE));
 }
 
 void Scene::DrawTerrain(ID3D12GraphicsCommandList* cmdList) {
@@ -711,8 +739,12 @@ void Scene::DrawTerrain(ID3D12GraphicsCommandList* cmdList) {
 	cmdList->SetDescriptorHeaps(_countof(heaps), heaps);
 
 	// set the srv buffers.
-	CD3DX12_GPU_DESCRIPTOR_HANDLE handleSRV(mlDescriptorHeaps[0]->GetGPUDescriptorHandleForHeapStart(), 2, msizeofCBVSRVDescHeapIncrement);
+	// terrain
+	CD3DX12_GPU_DESCRIPTOR_HANDLE handleSRV(mlDescriptorHeaps[0]->GetGPUDescriptorHandleForHeapStart(), 0, msizeofCBVSRVDescHeapIncrement);
 	cmdList->SetGraphicsRootDescriptorTable(0, handleSRV);
+	// shadow map
+	CD3DX12_GPU_DESCRIPTOR_HANDLE handleSRV2(mlDescriptorHeaps[0]->GetGPUDescriptorHandleForHeapStart(), 17 + mFrame, msizeofCBVSRVDescHeapIncrement);
+	cmdList->SetGraphicsRootDescriptorTable(1, handleSRV2);
 
 	if (mDrawMode) {
 		// set the constant buffers.
@@ -732,13 +764,18 @@ void Scene::DrawTerrain(ID3D12GraphicsCommandList* cmdList) {
 		constants.frustum[4] = frustum[4];
 		constants.frustum[5] = frustum[5];
 		constants.light = DNC.GetLight();
-		memcpy(mpPerFrameConstantsMapped, &constants, sizeof(PerFrameConstantBuffer));
+		memcpy(mpPerFrameConstantsMapped[mFrame], &constants, sizeof(PerFrameConstantBuffer));
 		
-		cmdList->SetGraphicsRootDescriptorTable(1, mlDescriptorHeaps[0]->GetGPUDescriptorHandleForHeapStart());
+		CD3DX12_GPU_DESCRIPTOR_HANDLE handleCBV(mlDescriptorHeaps[0]->GetGPUDescriptorHandleForHeapStart(), 2 + mFrame, msizeofCBVSRVDescHeapIncrement);
+		cmdList->SetGraphicsRootDescriptorTable(2, handleCBV);
+
+		CD3DX12_GPU_DESCRIPTOR_HANDLE handleCBV2(mlDescriptorHeaps[0]->GetGPUDescriptorHandleForHeapStart(), 1, msizeofCBVSRVDescHeapIncrement);
+		cmdList->SetGraphicsRootDescriptorTable(3, handleCBV2);
 	}
 	
 	// mDrawMode = 0/false for 2D rendering and 1/true for 3D rendering
 	T.Draw(cmdList, (bool)mDrawMode);
+	mFrame = (mFrame + 1) % 3;
 }
 
 void Scene::Draw() {
@@ -765,8 +802,6 @@ void Scene::Draw() {
 }
 
 void Scene::Update() {
-	_sleep(3); // without this, smaller heightmaps were unable to animate correctly as frame rate too high so angle always ended up at 0.
-	
 	float h = T.GetHeightMapDepth() / 2.0f;
 	float w = T.GetHeightMapWidth() / 2.0f;
 	DNC.Update(XMFLOAT3(w, h, 0.0f), sqrtf(w * w + h * h), &C);

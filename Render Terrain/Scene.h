@@ -2,7 +2,7 @@
 Scene.h
 
 Author:			Chris Serson
-Last Edited:	August 18, 2016
+Last Edited:	August 23, 2016
 
 Description:	Class for creating, managing, and rendering a scene.
 
@@ -105,14 +105,16 @@ private:
 	D3D12_RECT							maShadowMapScissorRects[4];
 	int									mDrawMode;
 	UINT								msizeofCBVSRVDescHeapIncrement;
+	UINT								msizeofDSVDescHeapIncrement;
 	std::vector<ID3D12RootSignature*>	mlRootSigs;
 	std::vector<ID3D12PipelineState*>	mlPSOs;
 	std::vector<ID3D12DescriptorHeap*>	mlDescriptorHeaps;
 	std::vector<ID3D12Resource*>		mlTemporaryUploadBuffers;
-	ID3D12Resource*						mpPerFrameConstants;
-	ID3D12Resource*						mpShadowConstants[4];
-	ID3D12Resource*						mpShadowMap;
-	PerFrameConstantBuffer*				mpPerFrameConstantsMapped;
-	ShadowMapShaderConstants*			maShadowConstantsMapped[4];
+	ID3D12Resource*						mpPerFrameConstants[3];
+	ID3D12Resource*						mpShadowConstants[3][4];
+	ID3D12Resource*						mpShadowMap[3];
+	PerFrameConstantBuffer*				mpPerFrameConstantsMapped[3];
+	ShadowMapShaderConstants*			maShadowConstantsMapped[3][4];
+	int									mFrame = 0;
 };
 

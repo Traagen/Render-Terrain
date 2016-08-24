@@ -41,7 +41,7 @@ struct DS_OUTPUT
 };
 
 // shadow map constants
-static const float SMAP_SIZE = 2048.0f;
+static const float SMAP_SIZE = 4096.0f;
 static const float SMAP_DX = 1.0f / SMAP_SIZE;
 
 // code for putting together cotangent frame and perturbing normal from normal map.
@@ -111,12 +111,13 @@ float calcShadowFactor(float4 shadowPosH) {
 	const float dx = SMAP_DX;
 
 	float percentLit = 0.0f;
+	
 	const float2 offsets[9] = {
 		float2(-dx,  -dx), float2(0.0f,  -dx), float2(dx,  -dx),
 		float2(-dx, 0.0f), float2(0.0f, 0.0f), float2(dx, 0.0f),
 		float2(-dx,   dx), float2(0.0f,   dx), float2(dx,   dx)
 	};
-
+//	return shadowmap.SampleCmpLevelZero(shadowsampler, shadowPosH.xy, depth);
 	// 3x3 box filter pattern. Each sample does a 4-tap PCF.
 	[unroll]
 	for (int i = 0; i < 9; ++i) {
@@ -127,22 +128,24 @@ float calcShadowFactor(float4 shadowPosH) {
 	return percentLit / 9.0f;
 }
 
-float4 decideOnCascade(float4 shadowpos[4]) {
+float decideOnCascade(float4 shadowpos[4]) {
 	// if shadowpos[0].xy is in the range [0, 0.5], then this point is in the first cascade
-	if (max(abs(shadowpos[0].x - 0.25), abs(shadowpos[0].y - 0.25)) < 0.25) {
-		return shadowpos[0];
+	if (max(abs(shadowpos[0].x - 0.25), abs(shadowpos[0].y - 0.25)) < 0.24) {
+		return calcShadowFactor(shadowpos[0]);
 	}
 
-	if (max(abs(shadowpos[1].x - 0.25), abs(shadowpos[1].y - 0.75)) < 0.25) {
-		return shadowpos[1];
+	if (max(abs(shadowpos[1].x - 0.25), abs(shadowpos[1].y - 0.75)) < 0.24) {
+		return calcShadowFactor(shadowpos[1]);
 	}
 
-	if (max(abs(shadowpos[2].x - 0.75), abs(shadowpos[2].y - 0.25)) < 0.25) {
-		return shadowpos[2];
+	if (max(abs(shadowpos[2].x - 0.75), abs(shadowpos[2].y - 0.25)) < 0.24) {
+		return calcShadowFactor(shadowpos[2]);
 	}
 	
-	return shadowpos[3];
+	return calcShadowFactor(shadowpos[3]);
 }
+
+
 
 // basic diffuse/ambient lighting
 float4 main(DS_OUTPUT input) : SV_TARGET
@@ -160,7 +163,7 @@ float4 main(DS_OUTPUT input) : SV_TARGET
 
 	float4 color = float4(0.22f, 0.72f, 0.31f, 1.0f);
 
-	float shadowfactor = calcShadowFactor(decideOnCascade(input.shadowpos));
+	float shadowfactor = decideOnCascade(input.shadowpos);
 	float4 diffuse = max(shadowfactor, light.amb) * light.dif * dot(-light.dir, norm);
 	float3 V = reflect(light.dir, norm);
 	float3 toEye = normalize(eye.xyz - input.worldpos);
