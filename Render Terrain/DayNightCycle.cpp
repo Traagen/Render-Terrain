@@ -2,7 +2,7 @@
 DayNightCycle.cpp
 
 Author:			Chris Serson
-Last Edited:	August 22, 2016
+Last Edited:	August 24, 2016
 
 Description:	Class for managing the Day/Night Cycle for the scene.
 */
@@ -158,6 +158,9 @@ void DayNightCycle::CalculateShadowMatrices(XMFLOAT3 centerBS, float radiusBS, C
 		XMStoreFloat2(&so, rounding);
 		XMMATRIX roundMatrix = XMMatrixTranslation(so.x, so.y, 0.0f);
 		S *= roundMatrix;
+
+		// Calculate the frustum planes for this view projection matrix.
+		CalculateShadowFrustum(i, S);
 		
 		XMStoreFloat4x4(&maShadowViewProjs[i], XMMatrixTranspose(S));
 
@@ -173,7 +176,7 @@ void DayNightCycle::CalculateShadowMatrices(XMFLOAT3 centerBS, float radiusBS, C
 			x = 0.75f;
 			y = 0.25f;
 		}
-		
+				
 		XMMATRIX T(0.25f, 0.0f, 0.0f, 0.0f,
 			0.0f, -0.25f, 0.0f, 0.0f,
 			0.0f, 0.0f, 1.0f, 0.0f,
@@ -212,6 +215,9 @@ void DayNightCycle::CalculateShadowMatrices(XMFLOAT3 centerBS, float radiusBS, C
 	XMMATRIX roundMatrix = XMMatrixTranslation(so.x, so.y, 0.0f);
 	S *= roundMatrix;
 	
+	// Calculate the frustum planes for this view projection matrix.
+	CalculateShadowFrustum(3, S);
+
 	XMStoreFloat4x4(&maShadowViewProjs[3], XMMatrixTranspose(S));
 
 	// transform NDC space [-1, +1]^2 to texture space [0, 1]^2
@@ -222,4 +228,45 @@ void DayNightCycle::CalculateShadowMatrices(XMFLOAT3 centerBS, float radiusBS, C
 	S *= T;
 
 	XMStoreFloat4x4(&maShadowViewProjTexs[3], XMMatrixTranspose(S));
+}
+
+void DayNightCycle::CalculateShadowFrustum(int i, XMMATRIX VP) {
+	XMFLOAT4X4 M;
+	XMStoreFloat4x4(&M, VP);
+
+	// left
+	maShadowFrustums[i][0].x = M(0, 3) + M(0, 0);
+	maShadowFrustums[i][0].y = M(1, 3) + M(1, 0);
+	maShadowFrustums[i][0].z = M(2, 3) + M(2, 0);
+	maShadowFrustums[i][0].w = M(3, 3) + M(3, 0);
+
+	// right
+	maShadowFrustums[i][1].x = M(0, 3) - M(0, 0);
+	maShadowFrustums[i][1].y = M(1, 3) - M(1, 0);
+	maShadowFrustums[i][1].z = M(2, 3) - M(2, 0);
+	maShadowFrustums[i][1].w = M(3, 3) - M(3, 0);
+
+	// bottom
+	maShadowFrustums[i][2].x = M(0, 3) + M(0, 1);
+	maShadowFrustums[i][2].y = M(1, 3) + M(1, 1);
+	maShadowFrustums[i][2].z = M(2, 3) + M(2, 1);
+	maShadowFrustums[i][2].w = M(3, 3) + M(3, 1);
+
+	// top
+	maShadowFrustums[i][3].x = M(0, 3) - M(0, 1);
+	maShadowFrustums[i][3].y = M(1, 3) - M(1, 1);
+	maShadowFrustums[i][3].z = M(2, 3) - M(2, 1);
+	maShadowFrustums[i][3].w = M(3, 3) - M(3, 1);
+
+	// normalize all planes
+	for (auto j = 0; j < 4; ++j) {
+		XMVECTOR v = XMPlaneNormalize(XMLoadFloat4(&maShadowFrustums[i][j]));
+		XMStoreFloat4(&maShadowFrustums[i][j], v);
+	}
+}
+
+void DayNightCycle::GetShadowFrustum(int i, XMFLOAT4 planes[6]) {
+	for (int j = 0; j < 4; ++j) {
+		planes[j] = maShadowFrustums[i][j];
+	}
 }

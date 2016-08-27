@@ -15,8 +15,11 @@ cbuffer TerrainData : register(b1)
 }
 
 Texture2D<float> heightmap : register(t0);
+Texture2D<float4> displacementmap : register(t2);
+
 SamplerState hmsampler : register(s0);
 SamplerState detailsampler : register(s1);
+SamplerState displacementsampler : register(s3);
 
 struct DS_OUTPUT
 {
@@ -88,16 +91,8 @@ DS_OUTPUT main(
 		output.worldpos.z = heightmap.SampleLevel(hmsampler, output.tex, 0.0f) * scale;
 	}
 	
-//	float3 norm = estimateNormal(output.tex);
-//	output.worldpos += norm * (2.0f * heightmap.SampleLevel(detailsampler, output.tex * 256.0f, 0.0f) - 1.0f) / 5.0f;
-	
-	//output.norm = posnorm.yzw;
-	// perturb along face normal
-	//output.norm = normalize(patch[0].norm * domain.x + patch[1].norm * domain.y + patch[2].norm * domain.z);
-//	output.norm = lerp(lerp(patch[0].norm, patch[1].norm, domain.x), lerp(patch[2].norm, patch[3].norm, domain.x), domain.y);
-/*	float mysample = heightmap.SampleLevel(hmsampler, output.tex / 16.0f, 0.0f);
-	output.pos = float4(output.pos.xyz + output.norm * (2.0f * mysample - 1.0f), 1.0f);
-	*/
+	float3 norm = estimateNormal(output.tex);
+	output.worldpos += norm * (2.0f * displacementmap.SampleLevel(displacementsampler, output.tex * 64.0f, 0.0f) - 1.0f);
 	
 	// generate coordinates transformed into view/projection space.
 	output.pos = float4(output.worldpos, 1.0f);

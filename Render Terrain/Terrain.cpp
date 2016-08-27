@@ -2,7 +2,7 @@
 Terrain.cpp
 
 Author:			Chris Serson
-Last Edited:	August 11, 2016
+Last Edited:	August 25, 2016
 
 Description:	Class for loading a heightmap and rendering as a terrain.
 */
@@ -11,13 +11,17 @@ Description:	Class for loading a heightmap and rendering as a terrain.
 
 Terrain::Terrain() {
 	mpHeightmap = nullptr;
+	mpDisplacementMap = nullptr;
 	mpVertexBuffer = nullptr;
 	mpIndexBuffer = nullptr;
 	maImage = nullptr;
+	maDispImage = nullptr;
 	maVertices = nullptr;
 	maIndices = nullptr;
 
 	LoadHeightMap("heightmap6.png");
+	LoadDisplacementMap("displacementmap.png", "displacementmapnormals.png");
+
 	CreateMesh3D();
 }
 
@@ -27,6 +31,11 @@ Terrain::~Terrain() {
 	if (mpHeightmap) {
 		mpHeightmap->Release();
 		mpHeightmap = nullptr;
+	}
+
+	if (mpDisplacementMap) {
+		mpDisplacementMap->Release();
+		mpDisplacementMap = nullptr;
 	}
 
 	if (mpIndexBuffer) {
@@ -40,6 +49,7 @@ Terrain::~Terrain() {
 	}
 
 	if (maImage) delete[] maImage;
+	if (maDispImage) delete[] maDispImage;
 
 	DeleteVertexAndIndexArrays();
 }
@@ -75,7 +85,7 @@ void Terrain::DeleteVertexAndIndexArrays() {
 void Terrain::CreateMesh3D() {
 	// Create a vertex buffer
 	mHeightScale = (float)mWidth / 4.0f;
-	int tessFactor = 4;
+	int tessFactor = 8;
 	int scalePatchX = mWidth / tessFactor;
 	int scalePatchY = mDepth / tessFactor;
 	int numVertsInTerrain = scalePatchX * scalePatchY;
@@ -249,4 +259,34 @@ void Terrain::LoadHeightMap(const char* fnHeightMap) {
 	}
 	// we don't need the original data anymore.
 	delete[] tmpHeightMap; 
+}
+
+void Terrain::LoadDisplacementMap(const char* fnMap, const char* fnNMap) {
+	// load the black and white heightmap png file. Data is RGBA unsigned char.
+	unsigned char* tmpMap;
+	unsigned char* tmpNMap;
+
+	unsigned error = lodepng_decode32_file(&tmpMap, &mDispWidth, &mDispDepth, fnMap);
+	if (error) {
+		throw GFX_Exception("Error loading terrain displacement map texture.");
+	}
+	error = lodepng_decode32_file(&tmpNMap, &mDispWidth, &mDispDepth, fnNMap);
+	if (error) {
+		throw GFX_Exception("Error loading terrain displacement normal map texture.");
+	}
+	
+	// Convert the height values to a float.
+	maDispImage = new float[mDispWidth * mDispDepth * 4]; 
+
+	// combine the normal map with the displacement height map so that xyz is normal, w is height
+	for (unsigned int i = 0; i < mDispWidth * mDispDepth * 4; i += 4) {
+		// convert values to float between 0 and 1.
+		maDispImage[i] = (float)tmpNMap[i] / 255.0f;
+		maDispImage[i + 1] = (float)tmpNMap[i + 1] / 255.0f;
+		maDispImage[i + 2] = (float)tmpNMap[i + 2] / 255.0f;
+		maDispImage[i + 3] = (float)tmpMap[i] / 255.0f;
+	}
+	// we don't need the original data anymore.
+	delete[] tmpMap;
+	delete[] tmpNMap;
 }

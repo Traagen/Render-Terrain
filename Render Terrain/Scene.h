@@ -2,7 +2,7 @@
 Scene.h
 
 Author:			Chris Serson
-Last Edited:	August 23, 2016
+Last Edited:	August 24, 2016
 
 Description:	Class for creating, managing, and rendering a scene.
 
@@ -39,8 +39,9 @@ struct PerFrameConstantBuffer {
 };
 
 struct ShadowMapShaderConstants {
-	XMFLOAT4X4 shadowViewProj;
+	XMFLOAT4X4	shadowViewProj;
 	XMFLOAT4	eye;
+	XMFLOAT4	frustum[4];
 };
 
 struct TerrainShaderConstants {

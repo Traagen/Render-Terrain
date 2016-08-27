@@ -28,9 +28,11 @@ cbuffer TerrainData : register(b1)
 
 Texture2D<float> heightmap : register(t0);
 Texture2D<float> shadowmap : register(t1);
+Texture2D<float4> displacementmap : register(t2);
 
 SamplerState hmsampler : register(s0);
 SamplerComparisonState shadowsampler : register(s2);
+SamplerState displacementsampler : register(s3);
 
 struct DS_OUTPUT
 {
@@ -48,7 +50,7 @@ static const float SMAP_DX = 1.0f / SMAP_SIZE;
 // code originally presented by Christian Schuler
 // http://www.thetenthplanet.de/archives/1180
 // converted from his glsl to hlsl
-/*float3x3 cotangent_frame(float3 N, float3 p, float2 uv) {
+float3x3 cotangent_frame(float3 N, float3 p, float2 uv) {
 	// get edge vectors of the pixel triangle
 	float3 dp1 = ddx(p);
 	float3 dp2 = ddy(p);
@@ -69,11 +71,11 @@ static const float SMAP_DX = 1.0f / SMAP_SIZE;
 float3 perturb_normal(float3 N, float3 V, float2 texcoord) {
 	// assume N, the interpolated vertex normal and
 	// V, the view vector (vertex to eye)
-	//float3 map = 2.0f * heightmap.Sample(detailsampler, texcoord).yzw - 1.0f;
-	map.z *= 5.0f;
+	float3 map = 2.0f * displacementmap.Sample(displacementsampler, texcoord).xyz - 1.0f;
+	//map.z *= 5.0f;
 	float3x3 TBN = cotangent_frame(N, -V, texcoord);
 	return normalize(mul(map, TBN));
-}*/
+}
 
 float3 estimateNormal(float2 texcoord) {
 	float2 b = texcoord + float2(0.0f, -0.3f / depth);
@@ -145,8 +147,6 @@ float decideOnCascade(float4 shadowpos[4]) {
 	return calcShadowFactor(shadowpos[3]);
 }
 
-
-
 // basic diffuse/ambient lighting
 float4 main(DS_OUTPUT input) : SV_TARGET
 {
@@ -158,8 +158,8 @@ float4 main(DS_OUTPUT input) : SV_TARGET
 	//N = perturb_normal(N, viewvector, input.tex);
 	//float4 norm = float4(N, 1.0f);
 	float3 norm = estimateNormal(input.tex);
-//	float3 viewvector = eye.xyz - input.worldpos;
-//	norm = perturb_normal(norm, viewvector, input.tex * 256.0f);
+	float3 viewvector = eye.xyz - input.worldpos;
+	norm = perturb_normal(norm, viewvector, input.tex * 64.0f);
 
 	float4 color = float4(0.22f, 0.72f, 0.31f, 1.0f);
 

@@ -2,7 +2,7 @@
 DayNightCycle.h
 
 Author:			Chris Serson
-Last Edited:	August 22, 2016
+Last Edited:	August 24, 2016
 
 Description:	Class for managing the Day/Night Cycle for the scene.
 
@@ -68,9 +68,11 @@ public:
 	LightSource GetLight() { return mdlSun.GetLight(); }
 	XMFLOAT4X4 GetShadowViewProjMatrix(int i) { return maShadowViewProjs[i]; }
 	XMFLOAT4X4 GetShadowViewProjTexMatrix(int i) { return maShadowViewProjTexs[i]; }
+	void GetShadowFrustum(int i, XMFLOAT4 planes[6]);
 
 private:
 	void CalculateShadowMatrices(XMFLOAT3 centerBS, float radiusBS, Camera* cam);
+	void CalculateShadowFrustum(int i, XMMATRIX VP);
 		
 	UINT						mPeriod;	// the number of game milliseconds that each real time millisecond should count as.
 	DirectionalLight			mdlSun;		// light source representing the sun. 
@@ -81,5 +83,6 @@ private:
 	UINT						mShadowMapSize;
 	XMFLOAT4X4					maShadowViewProjs[4];
 	XMFLOAT4X4					maShadowViewProjTexs[4];
+	XMFLOAT4					maShadowFrustums[4][4];
 };
 

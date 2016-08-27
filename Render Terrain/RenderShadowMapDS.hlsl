@@ -13,7 +13,6 @@ cbuffer TerrainData : register(b1)
 
 Texture2D<float> heightmap : register(t0);
 SamplerState hmsampler : register(s0);
-SamplerState detailsampler : register(s1);
 
 struct DS_OUTPUT
 {
