@@ -12,7 +12,9 @@ cbuffer TerrainData : register(b1)
 }
 
 Texture2D<float> heightmap : register(t0);
+Texture2D<float4> displacementmap : register(t1);
 SamplerState hmsampler : register(s0);
+SamplerState displacementsampler : register(s1);
 
 struct DS_OUTPUT
 {
@@ -34,6 +36,32 @@ struct HS_CONSTANT_DATA_OUTPUT
 	uint skirt						: SKIRT;
 };
 
+float3 estimateNormal(float2 texcoord) {
+	float2 b = texcoord + float2(0.0f, -0.3f / depth);
+	float2 c = texcoord + float2(0.3f / width, -0.3f / depth);
+	float2 d = texcoord + float2(0.3f / width, 0.0f);
+	float2 e = texcoord + float2(0.3f / width, 0.3f / depth);
+	float2 f = texcoord + float2(0.0f, 0.3f / depth);
+	float2 g = texcoord + float2(-0.3f / width, 0.3f / depth);
+	float2 h = texcoord + float2(-0.3f / width, 0.0f);
+	float2 i = texcoord + float2(-0.3f / width, -0.3f / depth);
+
+	float zb = heightmap.SampleLevel(hmsampler, b, 0) * scale;
+	float zc = heightmap.SampleLevel(hmsampler, c, 0) * scale;
+	float zd = heightmap.SampleLevel(hmsampler, d, 0) * scale;
+	float ze = heightmap.SampleLevel(hmsampler, e, 0) * scale;
+	float zf = heightmap.SampleLevel(hmsampler, f, 0) * scale;
+	float zg = heightmap.SampleLevel(hmsampler, g, 0) * scale;
+	float zh = heightmap.SampleLevel(hmsampler, h, 0) * scale;
+	float zi = heightmap.SampleLevel(hmsampler, i, 0) * scale;
+
+	float x = zg + 2 * zh + zi - zc - 2 * zd - ze;
+	float y = 2 * zb + zc + zi - ze - 2 * zf - zg;
+	float z = 8.0f;
+
+	return normalize(float3(x, y, z));
+}
+
 #define NUM_CONTROL_POINTS 4
 
 [domain("quad")]
@@ -53,6 +81,10 @@ DS_OUTPUT main(
 	} else {
 		worldpos.z = heightmap.SampleLevel(hmsampler, tex, 0.0f) * scale;
 	}
+
+	float3 norm = estimateNormal(tex);
+	float disp = 2.0f * displacementmap.SampleLevel(displacementsampler, tex * 64.0f, 0.0f).w - 1.0f;
+	worldpos += norm * disp;
 
 	output.pos = float4(worldpos, 1.0f);
 	output.pos = mul(output.pos, shadowmatrix);

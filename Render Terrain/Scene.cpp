@@ -2,7 +2,7 @@
 Scene.cpp
 
 Author:			Chris Serson
-Last Edited:	August 25, 2016
+Last Edited:	August 30, 2016
 
 Description:	Class for creating, managing, and rendering a scene.
 */
@@ -376,8 +376,8 @@ void Scene::InitPipelineTerrain3D() {
 void Scene::InitPipelineShadowMap() {
 	// set up the Root Signature.
 	// create a descriptor table with 2 entries for the descriptor heap containing our SRV to the heightmap and our CBV.
-	CD3DX12_ROOT_PARAMETER paramsRoot[3];
-	CD3DX12_DESCRIPTOR_RANGE rangesRoot[3];
+	CD3DX12_ROOT_PARAMETER paramsRoot[4];
+	CD3DX12_DESCRIPTOR_RANGE rangesRoot[4];
 	
 	// initialize a slot for the heightmap
 	rangesRoot[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
@@ -390,16 +390,22 @@ void Scene::InitPipelineShadowMap() {
 	rangesRoot[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 2);
 	paramsRoot[2].InitAsDescriptorTable(1, &rangesRoot[2]);
 
+	// create a slot for the displacement map.
+	rangesRoot[3].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
+	paramsRoot[3].InitAsDescriptorTable(1, &rangesRoot[3]);
+
 	// create our texture samplers for the heightmap.
-	CD3DX12_STATIC_SAMPLER_DESC	descSamplers[1];
+	CD3DX12_STATIC_SAMPLER_DESC	descSamplers[2];
 	descSamplers[0].Init(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
 	descSamplers[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_DOMAIN;
 	descSamplers[0].AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
 	descSamplers[0].AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+	descSamplers[1].Init(1, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
+	descSamplers[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_DOMAIN;
 
 	// It isn't really necessary to deny the other shaders access, but it does technically allow the GPU to optimize more.
 	CD3DX12_ROOT_SIGNATURE_DESC	descRoot;
-	descRoot.Init(_countof(paramsRoot), paramsRoot, 1, descSamplers, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT | D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS);
+	descRoot.Init(_countof(paramsRoot), paramsRoot, 2, descSamplers, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT | D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS);
 	ID3D12RootSignature* sigRoot;
 	mpGFX->CreateRootSig(&descRoot, sigRoot);
 	mlRootSigs.push_back(sigRoot);
@@ -774,6 +780,10 @@ void Scene::DrawShadowMap(ID3D12GraphicsCommandList* cmdList) {
 		CD3DX12_GPU_DESCRIPTOR_HANDLE handleShadowCBV(mlDescriptorHeaps[0]->GetGPUDescriptorHandleForHeapStart(), 5 + mFrame * 4 + i, msizeofCBVSRVDescHeapIncrement);
 
 		cmdList->SetGraphicsRootDescriptorTable(2, handleShadowCBV);
+
+		// displacement map
+		CD3DX12_GPU_DESCRIPTOR_HANDLE handleSRV2(mlDescriptorHeaps[0]->GetGPUDescriptorHandleForHeapStart(), 21, msizeofCBVSRVDescHeapIncrement);
+		cmdList->SetGraphicsRootDescriptorTable(3, handleSRV2);
 
 		// mDrawMode = 0/false for 2D rendering and 1/true for 3D rendering
 		T.Draw(cmdList, true);

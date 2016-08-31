@@ -92,13 +92,12 @@ DS_OUTPUT main(
 	}
 	
 	float3 norm = estimateNormal(output.tex);
-	output.worldpos += norm * (2.0f * displacementmap.SampleLevel(displacementsampler, output.tex * 64.0f, 0.0f) - 1.0f);
+	float disp = 2.0f * displacementmap.SampleLevel(displacementsampler, output.tex * 64.0f, 0.0f).w - 1.0f;
+	output.worldpos += norm * disp;
 	
 	// generate coordinates transformed into view/projection space.
 	output.pos = float4(output.worldpos, 1.0f);
 	output.pos = mul(output.pos, viewproj);
-
-	//output.shadowpos += float4(estimateNormal(output.tex) * 5.0f, 0.0f);
 
 	[unroll]
 	for (int i = 0; i < 4; ++i) {

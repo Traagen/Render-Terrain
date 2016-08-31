@@ -72,7 +72,6 @@ float3 perturb_normal(float3 N, float3 V, float2 texcoord) {
 	// assume N, the interpolated vertex normal and
 	// V, the view vector (vertex to eye)
 	float3 map = 2.0f * displacementmap.Sample(displacementsampler, texcoord).xyz - 1.0f;
-	//map.z *= 5.0f;
 	float3x3 TBN = cotangent_frame(N, -V, texcoord);
 	return normalize(mul(map, TBN));
 }
