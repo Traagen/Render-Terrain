@@ -2,7 +2,7 @@
 Terrain.cpp
 
 Author:			Chris Serson
-Last Edited:	August 25, 2016
+Last Edited:	September 1, 2016
 
 Description:	Class for loading a heightmap and rendering as a terrain.
 */
@@ -12,6 +12,7 @@ Description:	Class for loading a heightmap and rendering as a terrain.
 Terrain::Terrain() {
 	mpHeightmap = nullptr;
 	mpDisplacementMap = nullptr;
+	mpDetailMap = nullptr;
 	mpVertexBuffer = nullptr;
 	mpIndexBuffer = nullptr;
 	maImage = nullptr;
@@ -21,6 +22,7 @@ Terrain::Terrain() {
 
 	LoadHeightMap("heightmap6.png");
 	LoadDisplacementMap("displacementmap.png", "displacementmapnormals.png");
+	LoadDetailMap("rocknormalmap.png");
 
 	CreateMesh3D();
 }
@@ -38,6 +40,11 @@ Terrain::~Terrain() {
 		mpDisplacementMap = nullptr;
 	}
 
+	if (mpDetailMap) {
+		mpDetailMap->Release();
+		mpDetailMap = nullptr;
+	}
+
 	if (mpIndexBuffer) {
 		mpIndexBuffer->Release();
 		mpIndexBuffer = nullptr;
@@ -50,6 +57,7 @@ Terrain::~Terrain() {
 
 	if (maImage) delete[] maImage;
 	if (maDispImage) delete[] maDispImage;
+	if (maDetailImage) delete[] maDetailImage;
 
 	DeleteVertexAndIndexArrays();
 }
@@ -99,7 +107,7 @@ void Terrain::CreateMesh3D() {
 	for (int y = 0; y < scalePatchY; ++y) {
 		for (int x = 0; x < scalePatchX; ++x) {
 			maVertices[y * scalePatchX + x].position = XMFLOAT3((float)x * tessFactor, (float)y * tessFactor, maImage[(y * mWidth + x) * tessFactor] * mHeightScale);
-			maVertices[y * scalePatchX + x].tex = XMFLOAT3((float)x / (float)scalePatchX, (float)y / (float)scalePatchY, 5.0f);
+			maVertices[y * scalePatchX + x].skirt = 5;
 		}
 	}
 
@@ -109,25 +117,25 @@ void Terrain::CreateMesh3D() {
 	int iVertex = numVertsInTerrain;
 	for (int x = 0; x < scalePatchX; ++x) {
 		maVertices[iVertex].position = XMFLOAT3(x * tessFactor, 0.0f, mBaseHeight);
-		maVertices[iVertex++].tex = XMFLOAT3((float)x / (float)scalePatchX, 0.0f, 1.0f);
+		maVertices[iVertex++].skirt = 1;
 	}
 
 	// create base vertices for side 2 of skirt. y = mDepth - tessFactor.
 	for (int x = 0; x < scalePatchX; ++x) {
 		maVertices[iVertex].position = XMFLOAT3(x * tessFactor, mDepth - tessFactor, mBaseHeight);
-		maVertices[iVertex++].tex = XMFLOAT3((float)x / (float)scalePatchX, (float)(mDepth - tessFactor) / (float)mDepth, 2.0f);
+		maVertices[iVertex++].skirt = 2;
 	}
 
 	// create base vertices for side 3 of skirt. x = 0.
 	for (int y = 0; y < scalePatchY; ++y) {
 		maVertices[iVertex].position = XMFLOAT3(0.0f, y * tessFactor, mBaseHeight);
-		maVertices[iVertex++].tex = XMFLOAT3(0.0f, (float)y / (float)scalePatchY, 3.0f);
+		maVertices[iVertex++].skirt = 3;
 	}
 
 	// create base vertices for side 4 of skirt. x = mWidth - tessFactor.
 	for (int y = 0; y < scalePatchY; ++y) {
 		maVertices[iVertex].position = XMFLOAT3(mWidth - tessFactor, y * tessFactor, mBaseHeight);
-		maVertices[iVertex++].tex = XMFLOAT3((float)(mWidth - tessFactor) / (float)mWidth, (float)y / (float)scalePatchY, 4.0f);
+		maVertices[iVertex++].skirt = 4;
 	}
 
 	// create an index buffer
@@ -214,7 +222,7 @@ void Terrain::CreateMesh3D() {
 	maIndices[i++] = numVertsInTerrain + scalePatchX;
 	maVertices[numVertsInTerrain + scalePatchX - 1].aabbmin = XMFLOAT3(0.0f, 0.0f, mBaseHeight);
 	maVertices[numVertsInTerrain + scalePatchX - 1].aabbmax = XMFLOAT3(mWidth, mDepth, mBaseHeight);
-	maVertices[numVertsInTerrain + scalePatchX - 1].tex.z = 0.0f;
+	maVertices[numVertsInTerrain + scalePatchX - 1].skirt = 0;
 	
 	mIndexCount = arrSize;
 }
@@ -289,4 +297,24 @@ void Terrain::LoadDisplacementMap(const char* fnMap, const char* fnNMap) {
 	// we don't need the original data anymore.
 	delete[] tmpMap;
 	delete[] tmpNMap;
+}
+
+void Terrain::LoadDetailMap(const char* fnMap) {
+	// load the black and white heightmap png file. Data is RGBA unsigned char.
+	unsigned char* tmpMap;
+	unsigned error = lodepng_decode32_file(&tmpMap, &mDetailWidth, &mDetailHeight, fnMap);
+	if (error) {
+		throw GFX_Exception("Error loading terrain detail map texture.");
+	}
+
+	// Convert the height values to a float.
+	maDetailImage = new float[mDetailWidth * mDetailHeight * 4]; // one slot for the height and 3 for the normal at the point.
+										  // in this first loop, just copy the height value. We're going to scale it here as well.
+	for (unsigned int i = 0; i < mDetailWidth * mDetailHeight * 4; ++i) {
+		// convert values to float between 0 and 1.
+		// store height value as a floating point value between 0 and 1.
+		maDetailImage[i] = (float)tmpMap[i] / 255.0f;
+	}
+	// we don't need the original data anymore.
+	delete[] tmpMap;
 }

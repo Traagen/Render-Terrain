@@ -25,7 +25,6 @@ struct DS_OUTPUT
 struct HS_CONTROL_POINT_OUTPUT
 {
 	float3 worldpos : POSITION;
-	float2 tex : TEXCOORD;
 };
 
 // Output patch constant data.
@@ -62,6 +61,23 @@ float3 estimateNormal(float2 texcoord) {
 	return normalize(float3(x, y, z));
 }
 
+// takes x, y, and z texture coordinates and the normal and performs tri-planar mapping to
+// calculate the displacement value from the displacement map.
+float triplanar_displacement(float3 tex, float3 norm) {
+	float3 blending = abs(norm);
+	blending = normalize(max(blending, 0.00001)); // force weights to sum to 1.0
+	float b = blending.x + blending.y + blending.z;
+	blending /= float3(b, b, b);
+
+	float x = displacementmap.SampleLevel(displacementsampler, tex.yz, 0.0f).w;
+	float y = displacementmap.SampleLevel(displacementsampler, tex.xz, 0.0f).w;
+	float z = displacementmap.SampleLevel(displacementsampler, tex.xy, 0.0f).w;
+	float h = x * blending.x + y * blending.y + z * blending.z;
+	h = h - 0.5f;
+
+	return h;
+}
+
 #define NUM_CONTROL_POINTS 4
 
 [domain("quad")]
@@ -72,19 +88,18 @@ DS_OUTPUT main(
 {
 	DS_OUTPUT output;
 	float3 worldpos = lerp(lerp(patch[0].worldpos, patch[1].worldpos, domain.x), lerp(patch[2].worldpos, patch[3].worldpos, domain.x), domain.y);
-	float2 tex = lerp(lerp(patch[0].tex, patch[1].tex, domain.x), lerp(patch[2].tex, patch[3].tex, domain.x), domain.y);
 
 	if (input.skirt < 5) {
 		if (input.skirt > 0 && domain.y == 1) {
-			worldpos.z = heightmap.SampleLevel(hmsampler, tex, 0.0f) * scale;
+			worldpos.z = heightmap.SampleLevel(hmsampler, worldpos / width, 0.0f) * scale;
 		}
 	} else {
-		worldpos.z = heightmap.SampleLevel(hmsampler, tex, 0.0f) * scale;
+		worldpos.z = heightmap.SampleLevel(hmsampler, worldpos / width, 0.0f) * scale;
 	}
 
-	float3 norm = estimateNormal(tex);
-	float disp = 2.0f * displacementmap.SampleLevel(displacementsampler, tex * 64.0f, 0.0f).w - 1.0f;
-	worldpos += norm * disp;
+	float3 norm = estimateNormal(worldpos / width);
+	worldpos += norm * displacementmap.SampleLevel(displacementsampler, worldpos / 32, 0.0f).w;
+//	worldpos += norm * triplanar_displacement(worldpos / 32, norm);
 
 	output.pos = float4(worldpos, 1.0f);
 	output.pos = mul(output.pos, shadowmatrix);

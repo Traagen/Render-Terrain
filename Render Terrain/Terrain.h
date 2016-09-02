@@ -2,7 +2,7 @@
 Terrain.h
 
 Author:			Chris Serson
-Last Edited:	August 25, 2016
+Last Edited:	September 1, 2016
 
 Description:	Class for loading a heightmap and rendering as a terrain.
 
@@ -28,7 +28,7 @@ struct Vertex {
 	XMFLOAT3 position;
 	XMFLOAT3 aabbmin;
 	XMFLOAT3 aabbmax;
-	XMFLOAT3 tex;
+	UINT skirt;
 };
 
 class Terrain {
@@ -42,13 +42,17 @@ public:
 	UINT GetSizeOfIndexBuffer() { return mIndexCount * sizeof(UINT); }
 	UINT GetSizeOfHeightMap() { return mWidth * mDepth * sizeof(float); }
 	UINT GetSizeOfDisplacementMap() { return mDispWidth * mDispDepth * 4 * sizeof(float); }
+	UINT GetSizeOfDetailMap() { return mDetailWidth * mDetailHeight * 4 * sizeof(float); }
 	UINT GetHeightMapWidth() { return mWidth; }
 	UINT GetHeightMapDepth() { return mDepth; }
 	UINT GetDisplacementMapWidth() { return mDispWidth; }
 	UINT GetDisplacementMapDepth() { return mDispDepth; }
+	UINT GetDetailMapWidth() { return mDetailWidth; }
+	UINT GetDetailMapHeight() { return mDetailHeight; }
 	int GetBaseHeight() { return mBaseHeight; }
 	float* GetHeightMapTextureData() { return maImage; }
 	float* GetDisplacementMapTextureData() { return maDispImage; }
+	float* GetDetailMapTextureData() { return maDetailImage; }
 	Vertex* GetVertexArray() { return maVertices; }
 	UINT* GetIndexArray() { return maIndices; }
 	float GetScale() { return mHeightScale; }
@@ -57,6 +61,7 @@ public:
 	void SetIndexBufferView(D3D12_INDEX_BUFFER_VIEW ibv) { mIBV = ibv; }
 	void SetHeightmapResource(ID3D12Resource* tex) { mpHeightmap = tex; }
 	void SetDisplacementMapResource(ID3D12Resource* tex) { mpDisplacementMap = tex; }
+	void SetDetailMapResource(ID3D12Resource* tex) { mpDetailMap = tex; }
 	void SetVertexBufferResource(ID3D12Resource* vb) { mpVertexBuffer = vb; }
 	void SetIndexBufferResource(ID3D12Resource* ib) { mpIndexBuffer = ib; }
 
@@ -70,21 +75,26 @@ private:
 	void LoadHeightMap(const char* fnHeightMap);
 	// load the specified file containing a displacement map used for smaller geometry detail.
 	void LoadDisplacementMap(const char* fnMap, const char* fnNMap);
+	void LoadDetailMap(const char* fnMap);
 	// calculate the minimum and maximum z values for vertices between the provide bounds.
 	XMFLOAT2 CalcZBounds(Vertex topLeft, Vertex bottomRight);
 	
 	ID3D12Resource*				mpHeightmap;
 	ID3D12Resource*				mpDisplacementMap;
+	ID3D12Resource*				mpDetailMap;
 	ID3D12Resource*				mpVertexBuffer;
 	ID3D12Resource*				mpIndexBuffer;
 	D3D12_VERTEX_BUFFER_VIEW	mVBV;
 	D3D12_INDEX_BUFFER_VIEW		mIBV;
 	float*						maImage;
 	float*						maDispImage;
+	float*						maDetailImage;
 	unsigned int				mWidth;
 	unsigned int				mDepth;
 	unsigned int				mDispWidth;
 	unsigned int				mDispDepth;
+	unsigned int				mDetailWidth;
+	unsigned int				mDetailHeight;
 	int							mBaseHeight;
 	unsigned long				mVertexCount;
 	unsigned long				mIndexCount;

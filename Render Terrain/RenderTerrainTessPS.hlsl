@@ -29,6 +29,7 @@ cbuffer TerrainData : register(b1)
 Texture2D<float> heightmap : register(t0);
 Texture2D<float> shadowmap : register(t1);
 Texture2D<float4> displacementmap : register(t2);
+Texture2D<float4> detailmap : register(t3);
 
 SamplerState hmsampler : register(s0);
 SamplerComparisonState shadowsampler : register(s2);
@@ -39,12 +40,26 @@ struct DS_OUTPUT
 	float4 pos : SV_POSITION;
 	float4 shadowpos[4] : TEXCOORD0;
 	float3 worldpos : POSITION;
-    float2 tex : TEXCOORD4;
 };
 
 // shadow map constants
 static const float SMAP_SIZE = 4096.0f;
 static const float SMAP_DX = 1.0f / SMAP_SIZE;
+
+float3 triplanar_sample(Texture2D tex, SamplerState sam, float3 texcoord, float3 N) {
+	float3 blending = abs(N);
+	// force weights to sum to 1.0
+	blending = normalize(max(blending, 0.00001)); // force weights to sum to 1.0
+	//blending = pow(max(blending, 0.0), 0.5f); 
+	float b = blending.x + blending.y + blending.z;
+	blending /= float3(b, b, b);
+
+	float3 x = tex.Sample(sam, texcoord.yz).xyz;
+	float3 y = tex.Sample(sam, texcoord.xz).xyz;
+	float3 z = tex.Sample(sam, texcoord.xy).xyz;
+
+	return x * blending.x + y * blending.y + z * blending.z;
+}
 
 // code for putting together cotangent frame and perturbing normal from normal map.
 // code originally presented by Christian Schuler
@@ -68,10 +83,18 @@ float3x3 cotangent_frame(float3 N, float3 p, float2 uv) {
 	return float3x3(T * invmax, B * invmax, N);
 }
 
-float3 perturb_normal(float3 N, float3 V, float2 texcoord) {
+float3 perturb_normal(float3 N, float3 V, float2 texcoord, Texture2D tex, SamplerState sam) {
 	// assume N, the interpolated vertex normal and
 	// V, the view vector (vertex to eye)
-	float3 map = 2.0f * displacementmap.Sample(displacementsampler, texcoord).xyz - 1.0f;
+	float3 map = tex.Sample(sam, texcoord.xy).xyz - 0.5f;
+	float3x3 TBN = cotangent_frame(N, -V, texcoord.xy);
+	return normalize(mul(map, TBN));
+}
+
+float3 perturb_normal_triplanar(float3 N, float3 V, float3 texcoord, Texture2D tex, SamplerState sam) {
+	float3 map = triplanar_sample(tex, sam, texcoord, N);
+	map = map - 0.5f;
+
 	float3x3 TBN = cotangent_frame(N, -V, texcoord);
 	return normalize(mul(map, TBN));
 }
@@ -118,7 +141,7 @@ float calcShadowFactor(float4 shadowPosH) {
 		float2(-dx, 0.0f), float2(0.0f, 0.0f), float2(dx, 0.0f),
 		float2(-dx,   dx), float2(0.0f,   dx), float2(dx,   dx)
 	};
-//	return shadowmap.SampleCmpLevelZero(shadowsampler, shadowPosH.xy, depth);
+
 	// 3x3 box filter pattern. Each sample does a 4-tap PCF.
 	[unroll]
 	for (int i = 0; i < 9; ++i) {
@@ -156,12 +179,17 @@ float4 main(DS_OUTPUT input) : SV_TARGET
 	//float3 viewvector = eye.xyz - input.worldpos;
 	//N = perturb_normal(N, viewvector, input.tex);
 	//float4 norm = float4(N, 1.0f);
-	float3 norm = estimateNormal(input.tex);
+	float3 norm = estimateNormal(input.worldpos / width);
+
 	float3 viewvector = eye.xyz - input.worldpos;
-	norm = perturb_normal(norm, viewvector, input.tex * 64.0f);
+//	norm = perturb_normal_triplanar(norm, viewvector, input.worldpos / 32, displacementmap, displacementsampler);
+	norm = perturb_normal(norm, viewvector, input.worldpos / 32, displacementmap, displacementsampler);
+	//norm = perturb_normal(norm, viewvector, input.worldpos / 4, detailmap, displacementsampler);
+	norm = perturb_normal_triplanar(norm, viewvector, input.worldpos / 4, detailmap, displacementsampler);
 
 	float4 color = float4(0.22f, 0.72f, 0.31f, 1.0f);
-
+	//float4 color = float4(detailmap.Sample(displacementsampler, input.worldpos / 4).xyz, 1);
+	//float4 color = float4(triplanar_sample(detailmap, displacementsampler, input.worldpos / 4, norm), 1);
 	float shadowfactor = decideOnCascade(input.shadowpos);
 	float4 diffuse = max(shadowfactor, light.amb) * light.dif * dot(-light.dir, norm);
 	float3 V = reflect(light.dir, norm);

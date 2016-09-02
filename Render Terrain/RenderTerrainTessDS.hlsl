@@ -26,14 +26,12 @@ struct DS_OUTPUT
 	float4 pos : SV_POSITION;
 	float4 shadowpos[4] : TEXCOORD0;
 	float3 worldpos : POSITION;
-	float2 tex : TEXCOORD4;
 };
 
 // Output control point
 struct HS_CONTROL_POINT_OUTPUT
 {
 	float3 worldpos : POSITION;
-	float2 tex : TEXCOORD;
 };
 
 // Output patch constant data.
@@ -72,6 +70,24 @@ float3 estimateNormal(float2 texcoord) {
 	return normalize(float3(x, y, z));
 }
 
+// takes x, y, and z texture coordinates and the normal and performs tri-planar mapping to
+// calculate the displacement value from the displacement map.
+float triplanar_displacement(float3 tex, float3 norm) {
+	float3 blending = abs(norm);
+	blending = normalize(max(blending, 0.00001)); // force weights to sum to 1.0
+//	blending = pow(max(blending, 0.0), 0.5f);
+	float b = blending.x + blending.y + blending.z;
+	blending /= float3(b, b, b);
+
+	float x = displacementmap.SampleLevel(displacementsampler, tex.yz, 0.0f).w;
+	float y = displacementmap.SampleLevel(displacementsampler, tex.xz, 0.0f).w;
+	float z = displacementmap.SampleLevel(displacementsampler, tex.xy, 0.0f).w;
+	float h = x * blending.x + y * blending.y + z * blending.z;
+	h =  h - 0.5f;
+
+	return h;
+}
+
 [domain("quad")]
 DS_OUTPUT main(
 	HS_CONSTANT_DATA_OUTPUT input,
@@ -81,20 +97,22 @@ DS_OUTPUT main(
 	DS_OUTPUT output;
 
 	output.worldpos = lerp(lerp(patch[0].worldpos, patch[1].worldpos, domain.x), lerp(patch[2].worldpos, patch[3].worldpos, domain.x), domain.y);
-	output.tex = lerp(lerp(patch[0].tex, patch[1].tex, domain.x), lerp(patch[2].tex, patch[3].tex, domain.x), domain.y);
 	
+	float h;
 	if (input.skirt < 5) {
 		if (input.skirt > 0 && domain.y == 1) {
-			output.worldpos.z = heightmap.SampleLevel(hmsampler, output.tex, 0.0f) * scale;
+			h = heightmap.SampleLevel(hmsampler, output.worldpos / width, 0.0f);
+			output.worldpos.z = h * scale;
 		}
 	} else {
-		output.worldpos.z = heightmap.SampleLevel(hmsampler, output.tex, 0.0f) * scale;
+		h = heightmap.SampleLevel(hmsampler, output.worldpos / width, 0.0f);
+		output.worldpos.z = h * scale;
 	}
 	
-	float3 norm = estimateNormal(output.tex);
-	float disp = 2.0f * displacementmap.SampleLevel(displacementsampler, output.tex * 64.0f, 0.0f).w - 1.0f;
-	output.worldpos += norm * disp;
-	
+	float3 norm = estimateNormal(output.worldpos / width);
+	output.worldpos += norm * displacementmap.SampleLevel(displacementsampler, output.worldpos / 32, 0.0f).w;
+	//output.worldpos += norm * triplanar_displacement(output.worldpos / 32, norm);
+
 	// generate coordinates transformed into view/projection space.
 	output.pos = float4(output.worldpos, 1.0f);
 	output.pos = mul(output.pos, viewproj);

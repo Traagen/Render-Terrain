@@ -12,13 +12,12 @@ struct VS_OUTPUT
 	float3 worldpos : POSITION0;
 	float3 aabbmin : POSITION1;
 	float3 aabbmax : POSITION2;
-	float3 tex : TEXCOORD;
+	uint skirt : SKIRT;
 };
 // Output control point
 struct HS_CONTROL_POINT_OUTPUT
 {
 	float3 worldpos : POSITION;
-	float2 tex : TEXCOORD;
 };
 
 // Output patch constant data.
@@ -73,12 +72,9 @@ HS_CONSTANT_DATA_OUTPUT CalcHSPatchConstants(
 	uint PatchID : SV_PrimitiveID)
 {
 	HS_CONSTANT_DATA_OUTPUT output;
-	output.skirt = ip[0].tex.z;
+	output.skirt = ip[0].skirt;
 
 	// build axis-aligned bounding box. 
-	// ip[0] is lower left corner
-	// ip[3] is upper right corner
-	// get z value from boundsZ variable. Correct value will be in ip[0].
 	float3 vMin = ip[0].aabbmin;
 	float3 vMax = ip[0].aabbmax;
 	
@@ -97,16 +93,16 @@ HS_CONSTANT_DATA_OUTPUT CalcHSPatchConstants(
 		return output;
 	} else {
 		// don't tessellate any part of the skirt that isn't directly touching the terrain.
-		if (ip[0].tex.z == 0.0f) {
+		if (output.skirt == 0) {
 			output.EdgeTessFactor[0] = 1.0f;
 			output.EdgeTessFactor[1] = 1.0f;
 			output.EdgeTessFactor[2] = 1.0f;
 			output.EdgeTessFactor[3] = 1.0f;
 			output.InsideTessFactor[0] = 1.0f;
 			output.InsideTessFactor[1] = 1.0f;
-
+			
 			return output;
-		} else if (ip[0].tex.z < 5.0f) {
+		} else if (output.skirt < 5) {
 			float3 e3 = 0.5f * (ip[2].worldpos + ip[3].worldpos);
 
 			output.EdgeTessFactor[0] = 1.0f;
@@ -152,7 +148,6 @@ HS_CONTROL_POINT_OUTPUT main(
 
 	// Insert code to compute Output here
 	output.worldpos = ip[i].worldpos;
-	output.tex = ip[i].tex.xy;
 
 	return output;
 }

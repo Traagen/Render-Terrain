@@ -2,7 +2,7 @@
 Scene.cpp
 
 Author:			Chris Serson
-Last Edited:	August 30, 2016
+Last Edited:	September 1, 2016
 
 Description:	Class for creating, managing, and rendering a scene.
 */
@@ -136,7 +136,7 @@ void Scene::InitSRVCBVHeap() {
 	D3D12_DESCRIPTOR_HEAP_DESC descCBVSRVHeap = {};
 
 	// create the SRV heap that points at the heightmap and CBV.
-	descCBVSRVHeap.NumDescriptors = 22;
+	descCBVSRVHeap.NumDescriptors = 23;
 	descCBVSRVHeap.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	descCBVSRVHeap.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
@@ -275,8 +275,8 @@ void Scene::InitPipelineTerrain2D() {
 void Scene::InitPipelineTerrain3D() {
 	// set up the Root Signature.
 	// create a descriptor table.
-	CD3DX12_ROOT_PARAMETER paramsRoot[5];
-	CD3DX12_DESCRIPTOR_RANGE rangesRoot[5];
+	CD3DX12_ROOT_PARAMETER paramsRoot[6];
+	CD3DX12_DESCRIPTOR_RANGE rangesRoot[6];
 	
 	// initialize a slot for the heightmap 
 	rangesRoot[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
@@ -296,6 +296,10 @@ void Scene::InitPipelineTerrain3D() {
 	// create a slot for the displacement map.
 	rangesRoot[4].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2);
 	paramsRoot[4].InitAsDescriptorTable(1, &rangesRoot[4]);
+
+	// create a slot for the detail map.
+	rangesRoot[5].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 3);
+	paramsRoot[5].InitAsDescriptorTable(1, &rangesRoot[5], D3D12_SHADER_VISIBILITY_PIXEL);
 
 	// create our texture samplers for the heightmap.
 	CD3DX12_STATIC_SAMPLER_DESC	descSamplers[4];
@@ -342,7 +346,7 @@ void Scene::InitPipelineTerrain3D() {
 		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 		{ "POSITION", 1, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 		{ "POSITION", 2, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "SKIRT", 0, DXGI_FORMAT_R32_UINT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
 	};
 
 	descInputLayout.NumElements = sizeof(descElementLayout) / sizeof(D3D12_INPUT_ELEMENT_DESC);
@@ -430,7 +434,7 @@ void Scene::InitPipelineShadowMap() {
 		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 		{ "POSITION", 1, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 		{ "POSITION", 2, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "SKIRT", 0, DXGI_FORMAT_R32_UINT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
 	};
 
 	descInputLayout.NumElements = sizeof(descElementLayout) / sizeof(D3D12_INPUT_ELEMENT_DESC);
@@ -553,11 +557,36 @@ void Scene::InitTerrainResources() {
 	displacementmap->SetName(L"Terrain Displacement Map Texture Buffer");
 	const auto sizeofDispMap = GetRequiredIntermediateSize(displacementmap, 0, 1);
 
-	// prepare heightmap data for upload.
+	// prepare displacement map data for upload.
 	D3D12_SUBRESOURCE_DATA dataDispTex = {};
 	dataDispTex.pData = T.GetDisplacementMapTextureData();
 	dataDispTex.RowPitch = dwidth * 4 * sizeof(float);
 	dataDispTex.SlicePitch = ddepth * dwidth * 4 * sizeof(float);
+
+	// Create the detail map texture buffer.
+	UINT detwidth = T.GetDetailMapWidth();
+	UINT detdepth = T.GetDetailMapHeight();
+	D3D12_RESOURCE_DESC	descDetailTex = {};
+	descDetailTex.MipLevels = 1;
+	descDetailTex.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+	descDetailTex.Width = detwidth;
+	descDetailTex.Height = detdepth;
+	descDetailTex.Flags = D3D12_RESOURCE_FLAG_NONE;
+	descDetailTex.DepthOrArraySize = 1;
+	descDetailTex.SampleDesc.Count = 1;
+	descDetailTex.SampleDesc.Quality = 0;
+	descDetailTex.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+
+	ID3D12Resource* detailmap;
+	mpGFX->CreateDefaultBuffer(detailmap, &descDetailTex);
+	detailmap->SetName(L"Terrain Detail Map Texture Buffer");
+	const auto sizeofDetailMap = GetRequiredIntermediateSize(detailmap, 0, 1);
+
+	// prepare detail map data for upload.
+	D3D12_SUBRESOURCE_DATA dataDetailTex = {};
+	dataDetailTex.pData = T.GetDetailMapTextureData();
+	dataDetailTex.RowPitch = detwidth * 4 * sizeof(float);
+	dataDetailTex.SlicePitch = detdepth * detwidth * 4 * sizeof(float);
 
 	// attempt to create 1 upload buffer to upload all five.
 	// if that fails, we'll attempt to create separate upload buffers for each.
@@ -565,7 +594,7 @@ void Scene::InitTerrainResources() {
 	try {
 		ID3D12Resource* upload;
 		// add 11111111111 to force into catch block
-		mpGFX->CreateUploadBuffer(upload, &CD3DX12_RESOURCE_DESC::Buffer(sizeofHeightmap + sizeofVertexBuffer + sizeofIndexBuffer + sizeofConstantBuffer + sizeofDispMap));
+		mpGFX->CreateUploadBuffer(upload, &CD3DX12_RESOURCE_DESC::Buffer(sizeofHeightmap + sizeofVertexBuffer + sizeofIndexBuffer + sizeofConstantBuffer + sizeofDispMap + sizeofDetailMap));
 		mlTemporaryUploadBuffers.push_back(upload);
 
 		// upload heightmap data
@@ -574,27 +603,32 @@ void Scene::InitTerrainResources() {
 		// upload displacement map data
 		UpdateSubresources(cmdList, displacementmap, upload, sizeofHeightmap, 0, 1, &dataDispTex);
 
+		// upload detail map data
+		UpdateSubresources(cmdList, detailmap, upload, sizeofHeightmap + sizeofDispMap, 0, 1, &dataDetailTex);
+
 		// upload vertex buffer data
-		UpdateSubresources(cmdList, vertexbuffer, upload, sizeofHeightmap + sizeofDispMap, 0, 1, &dataVB);
+		UpdateSubresources(cmdList, vertexbuffer, upload, sizeofHeightmap + sizeofDispMap + sizeofDetailMap, 0, 1, &dataVB);
 
 		// upload index buffer data
-		UpdateSubresources(cmdList, indexbuffer, upload, sizeofHeightmap + sizeofDispMap + sizeofVertexBuffer, 0, 1, &dataIB);
+		UpdateSubresources(cmdList, indexbuffer, upload, sizeofHeightmap + sizeofDispMap + sizeofDetailMap + sizeofVertexBuffer, 0, 1, &dataIB);
 
 		// upload the constant buffer data
-		UpdateSubresources(cmdList, constantbuffer, upload, sizeofHeightmap + sizeofDispMap + sizeofVertexBuffer + sizeofIndexBuffer, 0, 1, &dataCB);
+		UpdateSubresources(cmdList, constantbuffer, upload, sizeofHeightmap + sizeofDispMap + sizeofDetailMap + sizeofVertexBuffer + sizeofIndexBuffer, 0, 1, &dataCB);
 	} catch (GFX_Exception e) {
 		// create 5 separate upload buffers
-		ID3D12Resource *uploadHeightmap, *uploadVB, *uploadIB, *uploadCB, *uploadDisplacementMap;
+		ID3D12Resource *uploadHeightmap, *uploadVB, *uploadIB, *uploadCB, *uploadDisplacementMap, *uploadDetailMap;
 		mpGFX->CreateUploadBuffer(uploadHeightmap, &CD3DX12_RESOURCE_DESC::Buffer(sizeofHeightmap));
 		mpGFX->CreateUploadBuffer(uploadVB, &CD3DX12_RESOURCE_DESC::Buffer(sizeofVertexBuffer));
 		mpGFX->CreateUploadBuffer(uploadIB, &CD3DX12_RESOURCE_DESC::Buffer(sizeofIndexBuffer));
 		mpGFX->CreateUploadBuffer(uploadCB, &CD3DX12_RESOURCE_DESC::Buffer(sizeofConstantBuffer));
 		mpGFX->CreateUploadBuffer(uploadDisplacementMap, &CD3DX12_RESOURCE_DESC::Buffer(sizeofDispMap));
+		mpGFX->CreateUploadBuffer(uploadDetailMap, &CD3DX12_RESOURCE_DESC::Buffer(sizeofDetailMap));
 		mlTemporaryUploadBuffers.push_back(uploadHeightmap);
 		mlTemporaryUploadBuffers.push_back(uploadVB);
 		mlTemporaryUploadBuffers.push_back(uploadIB);
 		mlTemporaryUploadBuffers.push_back(uploadCB);
 		mlTemporaryUploadBuffers.push_back(uploadDisplacementMap);
+		mlTemporaryUploadBuffers.push_back(uploadDetailMap);
 
 		// upload heightmap data
 		UpdateSubresources(cmdList, heightmap, uploadHeightmap, 0, 0, 1, &dataTex);
@@ -610,6 +644,9 @@ void Scene::InitTerrainResources() {
 
 		// upload displacement map data
 		UpdateSubresources(cmdList, displacementmap, uploadDisplacementMap, 0, 0, 1, &dataDispTex);
+
+		// upload detail map data
+		UpdateSubresources(cmdList, detailmap, uploadDetailMap, 0, 0, 1, &dataDetailTex);
 	}
 
 	// set resource barriers to inform GPU that data is ready for use.
@@ -622,6 +659,8 @@ void Scene::InitTerrainResources() {
 	cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(constantbuffer, D3D12_RESOURCE_STATE_COPY_DEST,
 		D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER));
 	cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(displacementmap, D3D12_RESOURCE_STATE_COPY_DEST,
+		D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
+	cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(detailmap, D3D12_RESOURCE_STATE_COPY_DEST,
 		D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
 
 	// create and save vertex buffer view to Terrain object.
@@ -669,6 +708,17 @@ void Scene::InitTerrainResources() {
 	CD3DX12_CPU_DESCRIPTOR_HANDLE handleDispSRV(mlDescriptorHeaps[0]->GetCPUDescriptorHandleForHeapStart(), 21, msizeofCBVSRVDescHeapIncrement);
 	mpGFX->CreateSRV(displacementmap, &descDispSRV, handleDispSRV);
 	T.SetDisplacementMapResource(displacementmap);
+
+	// Create the SRV for the detail map texture and save to Terrain object.
+	D3D12_SHADER_RESOURCE_VIEW_DESC	descDetailSRV = {};
+	descDetailSRV.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	descDetailSRV.Format = descDetailTex.Format;
+	descDetailSRV.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	descDetailSRV.Texture2D.MipLevels = descDetailTex.MipLevels;
+
+	CD3DX12_CPU_DESCRIPTOR_HANDLE handleDetailSRV(mlDescriptorHeaps[0]->GetCPUDescriptorHandleForHeapStart(), 22, msizeofCBVSRVDescHeapIncrement);
+	mpGFX->CreateSRV(detailmap, &descDetailSRV, handleDetailSRV);
+	T.SetDetailMapResource(detailmap);
 }
 
 void Scene::InitShadowMap(UINT width, UINT height) {
@@ -836,6 +886,10 @@ void Scene::DrawTerrain(ID3D12GraphicsCommandList* cmdList) {
 		// displacement map
 		CD3DX12_GPU_DESCRIPTOR_HANDLE handleSRV3(mlDescriptorHeaps[0]->GetGPUDescriptorHandleForHeapStart(), 21, msizeofCBVSRVDescHeapIncrement);
 		cmdList->SetGraphicsRootDescriptorTable(4, handleSRV3);
+
+		// detail map
+		CD3DX12_GPU_DESCRIPTOR_HANDLE handleSRV4(mlDescriptorHeaps[0]->GetGPUDescriptorHandleForHeapStart(), 22, msizeofCBVSRVDescHeapIncrement);
+		cmdList->SetGraphicsRootDescriptorTable(5, handleSRV4);
 	}
 	
 	// mDrawMode = 0/false for 2D rendering and 1/true for 3D rendering
