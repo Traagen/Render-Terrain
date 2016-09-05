@@ -2,7 +2,7 @@
 Terrain.cpp
 
 Author:			Chris Serson
-Last Edited:	September 1, 2016
+Last Edited:	September 4, 2016
 
 Description:	Class for loading a heightmap and rendering as a terrain.
 */
@@ -163,9 +163,11 @@ void Terrain::CreateMesh3D() {
 			// now that we have the indices for our patch, we need to calculate the bounding box.
 			// z bounds is a bit harder as we need to find the max and min y values in the heightmap for the patch range.
 			// store it in the first vertex
+			// subtract one from coords of min and add one to coords of max to take into account
+			// the offsets caused by displacement, which should always be between -1 and 1.
 			XMFLOAT2 bz = CalcZBounds(maVertices[vert0], maVertices[vert3]);
-			maVertices[vert0].aabbmin = XMFLOAT3(maVertices[vert0].position.x, maVertices[vert0].position.y, bz.x);
-			maVertices[vert0].aabbmax = XMFLOAT3(maVertices[vert3].position.x, maVertices[vert3].position.y, bz.y);
+			maVertices[vert0].aabbmin = XMFLOAT3(maVertices[vert0].position.x - 1, maVertices[vert0].position.y - 1, bz.x - 1);
+			maVertices[vert0].aabbmax = XMFLOAT3(maVertices[vert3].position.x + 1, maVertices[vert3].position.y + 1, bz.y + 1);
 		}
 	}
 
