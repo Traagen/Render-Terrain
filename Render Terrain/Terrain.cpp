@@ -2,7 +2,7 @@
 Terrain.cpp
 
 Author:			Chris Serson
-Last Edited:	September 4, 2016
+Last Edited:	September 5, 2016
 
 Description:	Class for loading a heightmap and rendering as a terrain.
 */
@@ -12,7 +12,6 @@ Description:	Class for loading a heightmap and rendering as a terrain.
 Terrain::Terrain() {
 	mpHeightmap = nullptr;
 	mpDisplacementMap = nullptr;
-	mpDetailMap = nullptr;
 	mpVertexBuffer = nullptr;
 	mpIndexBuffer = nullptr;
 	maImage = nullptr;
@@ -20,9 +19,17 @@ Terrain::Terrain() {
 	maVertices = nullptr;
 	maIndices = nullptr;
 
+	for (int i = 0; i < 4; ++i) {
+		maDetailImages[i] = nullptr;
+		mpDetailMaps[i] = nullptr;
+	}
+
 	LoadHeightMap("heightmap6.png");
 	LoadDisplacementMap("displacementmap.png", "displacementmapnormals.png");
-	LoadDetailMap("rocknormalmap.png");
+	LoadDetailMap(0, "grassnormalmap.png");
+	LoadDetailMap(1, "dirtnormalmap.png");
+	LoadDetailMap(2, "rocknormalmap.png");
+	LoadDetailMap(3, "snownormalmap.png");
 
 	CreateMesh3D();
 }
@@ -40,11 +47,6 @@ Terrain::~Terrain() {
 		mpDisplacementMap = nullptr;
 	}
 
-	if (mpDetailMap) {
-		mpDetailMap->Release();
-		mpDetailMap = nullptr;
-	}
-
 	if (mpIndexBuffer) {
 		mpIndexBuffer->Release();
 		mpIndexBuffer = nullptr;
@@ -55,9 +57,17 @@ Terrain::~Terrain() {
 		mpVertexBuffer = nullptr;
 	}
 
+	for (int i = 0; i < 4; ++i) {
+		if (mpDetailMaps[i]) {
+			mpDetailMaps[i]->Release();
+			mpDetailMaps[i] = nullptr;
+		}
+
+		if (maDetailImages[i]) delete[] maDetailImages[i];
+	}
+
 	if (maImage) delete[] maImage;
 	if (maDispImage) delete[] maDispImage;
-	if (maDetailImage) delete[] maDetailImage;
 
 	DeleteVertexAndIndexArrays();
 }
@@ -166,8 +176,8 @@ void Terrain::CreateMesh3D() {
 			// subtract one from coords of min and add one to coords of max to take into account
 			// the offsets caused by displacement, which should always be between -1 and 1.
 			XMFLOAT2 bz = CalcZBounds(maVertices[vert0], maVertices[vert3]);
-			maVertices[vert0].aabbmin = XMFLOAT3(maVertices[vert0].position.x - 1, maVertices[vert0].position.y - 1, bz.x - 1);
-			maVertices[vert0].aabbmax = XMFLOAT3(maVertices[vert3].position.x + 1, maVertices[vert3].position.y + 1, bz.y + 1);
+			maVertices[vert0].aabbmin = XMFLOAT3(maVertices[vert0].position.x - 0.5f, maVertices[vert0].position.y - 0.5f, bz.x - 0.5f);
+			maVertices[vert0].aabbmax = XMFLOAT3(maVertices[vert3].position.x + 0.5f, maVertices[vert3].position.y + 0.5f, bz.y + 0.5f);
 		}
 	}
 
@@ -301,21 +311,21 @@ void Terrain::LoadDisplacementMap(const char* fnMap, const char* fnNMap) {
 	delete[] tmpNMap;
 }
 
-void Terrain::LoadDetailMap(const char* fnMap) {
+void Terrain::LoadDetailMap(int index, const char* fnMap) {
 	// load the black and white heightmap png file. Data is RGBA unsigned char.
 	unsigned char* tmpMap;
-	unsigned error = lodepng_decode32_file(&tmpMap, &mDetailWidth, &mDetailHeight, fnMap);
+	unsigned error = lodepng_decode32_file(&tmpMap, &mDetailWidths[index], &mDetailHeights[index], fnMap);
 	if (error) {
 		throw GFX_Exception("Error loading terrain detail map texture.");
 	}
 
 	// Convert the height values to a float.
-	maDetailImage = new float[mDetailWidth * mDetailHeight * 4]; // one slot for the height and 3 for the normal at the point.
+	maDetailImages[index] = new float[mDetailWidths[index] * mDetailHeights[index] * 4]; // one slot for the height and 3 for the normal at the point.
 										  // in this first loop, just copy the height value. We're going to scale it here as well.
-	for (unsigned int i = 0; i < mDetailWidth * mDetailHeight * 4; ++i) {
+	for (unsigned int i = 0; i < mDetailWidths[index] * mDetailHeights[index] * 4; ++i) {
 		// convert values to float between 0 and 1.
 		// store height value as a floating point value between 0 and 1.
-		maDetailImage[i] = (float)tmpMap[i] / 255.0f;
+		maDetailImages[index][i] = (float)tmpMap[i] / 255.0f;
 	}
 	// we don't need the original data anymore.
 	delete[] tmpMap;

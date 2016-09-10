@@ -29,7 +29,10 @@ cbuffer TerrainData : register(b1)
 Texture2D<float> heightmap : register(t0);
 Texture2D<float> shadowmap : register(t1);
 Texture2D<float4> displacementmap : register(t2);
-Texture2D<float4> detailmap : register(t3);
+Texture2D<float4> detailmap1 : register(t3);
+Texture2D<float4> detailmap2 : register(t4);
+Texture2D<float4> detailmap3 : register(t5);
+Texture2D<float4> detailmap4 : register(t6);
 
 SamplerState hmsampler : register(s0);
 SamplerComparisonState shadowsampler : register(s2);
@@ -47,10 +50,9 @@ static const float SMAP_SIZE = 4096.0f;
 static const float SMAP_DX = 1.0f / SMAP_SIZE;
 
 float3 triplanar_sample(Texture2D tex, SamplerState sam, float3 texcoord, float3 N) {
-	float3 blending = abs(N);
+	float tighten = 0.4679f;
+	float3 blending = saturate(abs(N) - tighten);
 	// force weights to sum to 1.0
-	blending = normalize(max(blending, 0.00001)); // force weights to sum to 1.0
-	//blending = pow(max(blending, 0.0), 0.5f); 
 	float b = blending.x + blending.y + blending.z;
 	blending /= float3(b, b, b);
 
@@ -86,7 +88,8 @@ float3x3 cotangent_frame(float3 N, float3 p, float2 uv) {
 float3 perturb_normal(float3 N, float3 V, float2 texcoord, Texture2D tex, SamplerState sam) {
 	// assume N, the interpolated vertex normal and
 	// V, the view vector (vertex to eye)
-	float3 map = tex.Sample(sam, texcoord.xy).xyz - 0.5f;
+	float3 map = 2.0f * tex.Sample(sam, texcoord.xy).xyz - 1.0f;
+	map.z *= 2.0f; // scale normal as displacement height is scaled by 0.5
 	float3x3 TBN = cotangent_frame(N, -V, texcoord.xy);
 	return normalize(mul(map, TBN));
 }
@@ -97,6 +100,94 @@ float3 perturb_normal_triplanar(float3 N, float3 V, float3 texcoord, Texture2D t
 
 	float3x3 TBN = cotangent_frame(N, -V, texcoord);
 	return normalize(mul(map, TBN));
+}
+
+float3 triplanar_slopebased_sample(float slope, float3 N, float3 V, float3 uvw, Texture2D texXY, Texture2D texZ, SamplerState sam) {
+	float3 blending = abs(N);
+	// force weights to sum to 1.0
+	float b = blending.x + blending.y + blending.z;
+	blending /= float3(b, b, b);
+
+		float3 x = texXY.Sample(sam, uvw.yz).xyz;
+		float3 y = texXY.Sample(sam, uvw.xz).xyz;
+		float3 z = texXY.Sample(sam, uvw.xy).xyz;
+
+		if (slope < 0.25f) {
+			return texZ.Sample(sam, uvw.xy).xyz;
+		}
+
+		if (slope < 0.5f) {
+			float3 z2 = texZ.Sample(sam, uvw.xy).xyz;
+		
+			float blend = (slope - 0.25f) * (1.0f / (0.5f - 0.25f));
+
+			return lerp(z2, x * blending.x + y * blending.y + z * blending.z, blend);
+		} 
+		
+		return x * blending.x + y * blending.y + z * blending.z;
+}
+
+float3 perturb_normal_slopebased_triplanar(float slope, float3 N, float3 V, float3 uvw, Texture2D texXY, Texture2D texZ, SamplerState sam) {
+	float3 map = triplanar_slopebased_sample(slope, N, V, uvw, texXY, texZ, sam);
+	map = 2.0f * map - 1.0f;
+
+	float3x3 TBN = cotangent_frame(N, -V, uvw);
+	return normalize(mul(map, TBN));
+}
+
+float4 slope_based_color(float slope, float4 colorSteep, float4 colorFlat) {
+	if (slope < 0.25f) {
+		return colorFlat;
+	}
+
+	if (slope < 0.5f) {
+		float blend = (slope - 0.25f) * (1.0f / (0.5f - 0.25f));
+
+		return lerp(colorFlat, colorSteep, blend);
+	} else {
+		return colorSteep;
+	}
+}
+
+float4 height_and_slope_based_color(float height, float slope) {
+	float4 grass = float4(0.22f, 0.52f, 0.11f, 1.0f);
+	float4 dirt = float4(0.35f, 0.20f, 0.0f, 1.0f);
+	float4 rock = float4(0.42f, 0.42f, 0.52f, 1.0f);
+	float4 snow = float4(0.8f, 0.8f, 0.8f, 1.0f);
+
+	float bounds = scale * 0.02f;
+	float transition = scale * 0.6f;
+	float greenBlendEnd = transition + bounds;
+	float greenBlendStart = transition - bounds;
+	float snowBlendEnd = greenBlendEnd + 2 * bounds;
+
+	if (height < greenBlendStart) {
+		// get grass/dirt values
+		return slope_based_color(slope, dirt, grass);
+	}
+
+	if (height < greenBlendEnd) {
+		// get both grass/dirt values and rock values and blend
+		float4 c1 = slope_based_color(slope, dirt, grass);
+		float4 c2 = rock;
+	
+		float blend = (height - greenBlendStart) * (1.0f / (greenBlendEnd - greenBlendStart));
+		
+		return lerp(c1, c2, blend);
+	}
+
+	if (height < snowBlendEnd) {
+		// get rock values and rock/snow values and blend
+		float4 c1 = rock;
+		float4 c2 = slope_based_color(slope, rock, snow);
+		
+		float blend = (height - greenBlendEnd) * (1.0f / (snowBlendEnd - greenBlendEnd));
+
+		return lerp(c1, c2, blend);
+	}
+
+	// get rock/snow values
+	return slope_based_color(slope, rock, snow);
 }
 
 float3 estimateNormal(float2 texcoord) {
@@ -172,24 +263,14 @@ float decideOnCascade(float4 shadowpos[4]) {
 // basic diffuse/ambient lighting
 float4 main(DS_OUTPUT input) : SV_TARGET
 {
-//    return heightmap.Sample(hmsampler, input.tex);
- //   float4 light = normalize(float4(1.0f, 1.0f, -2.0f, 1.0f));
-
-	//float3 N = normalize(input.norm);
-	//float3 viewvector = eye.xyz - input.worldpos;
-	//N = perturb_normal(N, viewvector, input.tex);
-	//float4 norm = float4(N, 1.0f);
 	float3 norm = estimateNormal(input.worldpos / width);
 
 	float3 viewvector = eye.xyz - input.worldpos;
 //	norm = perturb_normal_triplanar(norm, viewvector, input.worldpos / 32, displacementmap, displacementsampler);
 	norm = perturb_normal(norm, viewvector, input.worldpos / 32, displacementmap, displacementsampler);
-	//norm = perturb_normal(norm, viewvector, input.worldpos / 4, detailmap, displacementsampler);
-	norm = perturb_normal_triplanar(norm, viewvector, input.worldpos / 4, detailmap, displacementsampler);
 
-	float4 color = float4(0.22f, 0.72f, 0.31f, 1.0f);
-	//float4 color = float4(detailmap.Sample(displacementsampler, input.worldpos / 4).xyz, 1);
-	//float4 color = float4(triplanar_sample(detailmap, displacementsampler, input.worldpos / 4, norm), 1);
+	float4 color = height_and_slope_based_color(input.worldpos.z, acos(norm.z));
+	
 	float shadowfactor = decideOnCascade(input.shadowpos);
 	float4 diffuse = max(shadowfactor, light.amb) * light.dif * dot(-light.dir, norm);
 	float3 V = reflect(light.dir, norm);

@@ -98,7 +98,7 @@ DS_OUTPUT main(
 	}
 
 	float3 norm = estimateNormal(worldpos / width);
-	worldpos += norm * displacementmap.SampleLevel(displacementsampler, worldpos / 32, 0.0f).w;
+	worldpos += norm * 0.5f * (2.0f * displacementmap.SampleLevel(displacementsampler, worldpos / 32, 0.0f).w - 1.0f);
 //	worldpos += norm * triplanar_displacement(worldpos / 32, norm);
 
 	output.pos = float4(worldpos, 1.0f);
