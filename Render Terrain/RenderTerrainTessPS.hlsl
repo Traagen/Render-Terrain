@@ -170,9 +170,8 @@ float4 height_and_slope_based_color(float height, float slope) {
 		// get both grass/dirt values and rock values and blend
 		float4 c1 = slope_based_color(slope, dirt, grass);
 		float4 c2 = rock;
-	
+
 		float blend = (height - greenBlendStart) * (1.0f / (greenBlendEnd - greenBlendStart));
-		
 		return lerp(c1, c2, blend);
 	}
 
@@ -182,12 +181,72 @@ float4 height_and_slope_based_color(float height, float slope) {
 		float4 c2 = slope_based_color(slope, rock, snow);
 		
 		float blend = (height - greenBlendEnd) * (1.0f / (snowBlendEnd - greenBlendEnd));
-
 		return lerp(c1, c2, blend);
 	}
 
 	// get rock/snow values
 	return slope_based_color(slope, rock, snow);
+}
+
+float3 height_and_slope_based_normal(float height, float slope, float3 N, float3 V, float3 uvw) {
+	float bounds = scale * 0.02f;
+	float transition = scale * 0.6f;
+	float greenBlendEnd = transition + bounds;
+	float greenBlendStart = transition - bounds;
+	float snowBlendEnd = greenBlendEnd + 2 * bounds;
+
+	float3 N1 = perturb_normal_slopebased_triplanar(slope, N, V, uvw, detailmap2, detailmap1, displacementsampler);
+	
+	if (height < greenBlendStart) {
+		// get grass/dirt values
+		return N1;
+	}
+
+	float3 N2 = perturb_normal_triplanar(N, V, uvw, detailmap3, displacementsampler);
+
+	if (height < greenBlendEnd) {
+		// get both grass/dirt values and rock values and blend
+		float blend = (height - greenBlendStart) * (1.0f / (greenBlendEnd - greenBlendStart));
+		return lerp(N1, N2, blend);
+	}
+
+	float3 N3 = perturb_normal_slopebased_triplanar(slope, N, V, uvw, detailmap3, detailmap4, displacementsampler);
+
+	if (height < snowBlendEnd) {
+		// get rock values and rock/snow values and blend
+		float blend = (height - greenBlendEnd) * (1.0f / (snowBlendEnd - greenBlendEnd));
+		return lerp(N2, N3, blend);
+	}
+
+	// get rock/snow values
+	return N3;
+}
+
+float3 dist_based_normal(float height, float slope, float3 N, float3 V, float3 uvw) {
+	float dist = length(V);
+
+	float3 N1 = perturb_normal(N, V, uvw / 32, displacementmap, displacementsampler);
+	//float3 N1 = perturb_normal_triplanar(N, V, uvw / 32, displacementmap, displacementsampler);
+
+	if (dist > 150) return N;
+
+	if (dist > 100) {
+		float blend = (dist - 100.0f) / 50.0f;
+
+		return lerp(N1, N, blend);
+	}
+
+	float3 N2 = height_and_slope_based_normal(height, slope, N1, V, uvw);
+
+	if (dist > 50) return N1;
+	
+	if (dist > 25) {
+		float blend = (dist - 25.0f) / 25.0f;
+
+		return lerp(N2, N1, blend);
+	}
+
+	return N2;
 }
 
 float3 estimateNormal(float2 texcoord) {
@@ -264,12 +323,11 @@ float decideOnCascade(float4 shadowpos[4]) {
 float4 main(DS_OUTPUT input) : SV_TARGET
 {
 	float3 norm = estimateNormal(input.worldpos / width);
-
 	float3 viewvector = eye.xyz - input.worldpos;
-//	norm = perturb_normal_triplanar(norm, viewvector, input.worldpos / 32, displacementmap, displacementsampler);
-	norm = perturb_normal(norm, viewvector, input.worldpos / 32, displacementmap, displacementsampler);
+	float s = acos(norm.z);
 
-	float4 color = height_and_slope_based_color(input.worldpos.z, acos(norm.z));
+	norm = dist_based_normal(input.worldpos.z, s, norm, viewvector, input.worldpos);
+	float4 color = height_and_slope_based_color(input.worldpos.z, s);
 	
 	float shadowfactor = decideOnCascade(input.shadowpos);
 	float4 diffuse = max(shadowfactor, light.amb) * light.dif * dot(-light.dir, norm);

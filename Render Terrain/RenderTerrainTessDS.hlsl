@@ -111,7 +111,7 @@ DS_OUTPUT main(
 	
 	float3 norm = estimateNormal(output.worldpos / width);
 	output.worldpos += norm * 0.5f * (2.0f * displacementmap.SampleLevel(displacementsampler, output.worldpos / 32, 0.0f).w - 1.0f);
-	//output.worldpos += norm * triplanar_displacement(output.worldpos / 32, norm);
+//	output.worldpos += norm * triplanar_displacement(output.worldpos / 32, norm);
 
 	// generate coordinates transformed into view/projection space.
 	output.pos = float4(output.worldpos, 1.0f);
