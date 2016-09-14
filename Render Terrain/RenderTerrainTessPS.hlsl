@@ -103,28 +103,29 @@ float3 perturb_normal_triplanar(float3 N, float3 V, float3 texcoord, Texture2D t
 }
 
 float3 triplanar_slopebased_sample(float slope, float3 N, float3 V, float3 uvw, Texture2D texXY, Texture2D texZ, SamplerState sam) {
-	float3 blending = abs(N);
+	if (slope < 0.25f) {
+		return texZ.Sample(sam, uvw.xy).xyz;
+	}
+
+	float tighten = 0.4679f;
+	float3 blending = saturate(abs(N) - tighten);
 	// force weights to sum to 1.0
 	float b = blending.x + blending.y + blending.z;
 	blending /= float3(b, b, b);
 
-		float3 x = texXY.Sample(sam, uvw.yz).xyz;
-		float3 y = texXY.Sample(sam, uvw.xz).xyz;
-		float3 z = texXY.Sample(sam, uvw.xy).xyz;
+	float3 x = texXY.Sample(sam, uvw.yz).xyz;
+	float3 y = texXY.Sample(sam, uvw.xz).xyz;
+	float3 z = texXY.Sample(sam, uvw.xy).xyz;
 
-		if (slope < 0.25f) {
-			return texZ.Sample(sam, uvw.xy).xyz;
-		}
+	if (slope < 0.5f) {
+		float3 z2 = texZ.Sample(sam, uvw.xy).xyz;
+	
+		float blend = (slope - 0.25f) * (1.0f / (0.5f - 0.25f));
 
-		if (slope < 0.5f) {
-			float3 z2 = texZ.Sample(sam, uvw.xy).xyz;
+		return lerp(z2, x * blending.x + y * blending.y + z * blending.z, blend);
+	} 
 		
-			float blend = (slope - 0.25f) * (1.0f / (0.5f - 0.25f));
-
-			return lerp(z2, x * blending.x + y * blending.y + z * blending.z, blend);
-		} 
-		
-		return x * blending.x + y * blending.y + z * blending.z;
+	return x * blending.x + y * blending.y + z * blending.z;
 }
 
 float3 perturb_normal_slopebased_triplanar(float slope, float3 N, float3 V, float3 uvw, Texture2D texXY, Texture2D texZ, SamplerState sam) {
@@ -324,10 +325,9 @@ float4 main(DS_OUTPUT input) : SV_TARGET
 {
 	float3 norm = estimateNormal(input.worldpos / width);
 	float3 viewvector = eye.xyz - input.worldpos;
-	float s = acos(norm.z);
-
-	norm = dist_based_normal(input.worldpos.z, s, norm, viewvector, input.worldpos);
-	float4 color = height_and_slope_based_color(input.worldpos.z, s);
+	
+	norm = dist_based_normal(input.worldpos.z, acos(norm.z), norm, viewvector, input.worldpos);
+	float4 color = height_and_slope_based_color(input.worldpos.z, acos(norm.z));
 	
 	float shadowfactor = decideOnCascade(input.shadowpos);
 	float4 diffuse = max(shadowfactor, light.amb) * light.dif * dot(-light.dir, norm);

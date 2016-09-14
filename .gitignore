@@ -238,3 +238,7 @@ ModelManifest.xml
 /Render Terrain/tessfactor8.jpg
 /Render Terrain/shadowsnotdisplaced.jpg
 /Render Terrain/shadowsdisplaced.jpg
+/Render Terrain/blendlines.jpg
+/Render Terrain/slopebased.jpg
+/Render Terrain/tightenedtriplanar.jpg
+/Render Terrain/triplanar2tex.jpg
