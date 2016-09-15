@@ -150,6 +150,40 @@ float4 slope_based_color(float slope, float4 colorSteep, float4 colorFlat) {
 	}
 }
 
+float4 height_and_slope_based_texture(float height, float slope, float3 N, float3 V, float3 uvw) {
+	float bounds = scale * 0.02f;
+	float transition = scale * 0.6f;
+	float greenBlendEnd = transition + bounds;
+	float greenBlendStart = transition - bounds;
+	float snowBlendEnd = greenBlendEnd + 2 * bounds;
+
+	if (height < greenBlendStart) {
+		// get grass/dirt values
+		return float4(triplanar_slopebased_sample(slope, N, V, uvw, detailmap2, detailmap1, displacementsampler), 1);
+	}
+
+	if (height < greenBlendEnd) {
+		// get both grass/dirt values and rock values and blend
+		float3 c1 = triplanar_slopebased_sample(slope, N, V, uvw, detailmap2, detailmap1, displacementsampler);
+		float3 c2 = triplanar_sample(detailmap3, displacementsampler, uvw, N);
+
+		float blend = (height - greenBlendStart) * (1.0f / (greenBlendEnd - greenBlendStart));
+		return float4(lerp(c1, c2, blend), 1);
+	}
+
+	if (height < snowBlendEnd) {
+		// get rock values and rock/snow values and blend
+		float3 c1 = triplanar_sample(detailmap3, displacementsampler, uvw, N);
+		float3 c2 = triplanar_slopebased_sample(slope, N, V, uvw, detailmap3, detailmap4, displacementsampler);
+
+		float blend = (height - greenBlendEnd) * (1.0f / (snowBlendEnd - greenBlendEnd));
+		return float4(lerp(c1, c2, blend), 1);
+	}
+
+	// get rock/snow values
+	return float4(triplanar_slopebased_sample(slope, N, V, uvw, detailmap3, detailmap4, displacementsampler), 1);
+}
+
 float4 height_and_slope_based_color(float height, float slope) {
 	float4 grass = float4(0.22f, 0.52f, 0.11f, 1.0f);
 	float4 dirt = float4(0.35f, 0.20f, 0.0f, 1.0f);
@@ -328,6 +362,7 @@ float4 main(DS_OUTPUT input) : SV_TARGET
 	
 	norm = dist_based_normal(input.worldpos.z, acos(norm.z), norm, viewvector, input.worldpos);
 	float4 color = height_and_slope_based_color(input.worldpos.z, acos(norm.z));
+//	float4 color = height_and_slope_based_texture(input.worldpos.z, acos(norm.z), norm, viewvector, input.worldpos / 4);
 	
 	float shadowfactor = decideOnCascade(input.shadowpos);
 	float4 diffuse = max(shadowfactor, light.amb) * light.dif * dot(-light.dir, norm);
