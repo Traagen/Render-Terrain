@@ -2,7 +2,7 @@
 DayNightCycle.h
 
 Author:			Chris Serson
-Last Edited:	August 24, 2016
+Last Edited:	September 15, 2016
 
 Description:	Class for managing the Day/Night Cycle for the scene.
 
@@ -55,7 +55,7 @@ static const XMFLOAT4 SUN_SPECULAR_COLORS[] = {
 	{ 0.0f, 0.0f, 0.0f, 1.0f },
 	{ 0.0f, 0.0f, 0.0f, 1.0f }
 };
-static const float CASCADE_PLANES[] = { 0.1f, 64.0f, 128.0f, 256.0f };
+static const float CASCADE_PLANES[] = { 0.1f, 64.0f, 128.0f, 256.0f, 1200.0f };
 
 class DayNightCycle {
 public:

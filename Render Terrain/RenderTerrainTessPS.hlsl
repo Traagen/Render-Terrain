@@ -339,15 +339,15 @@ float calcShadowFactor(float4 shadowPosH) {
 
 float decideOnCascade(float4 shadowpos[4]) {
 	// if shadowpos[0].xy is in the range [0, 0.5], then this point is in the first cascade
-	if (max(abs(shadowpos[0].x - 0.25), abs(shadowpos[0].y - 0.25)) < 0.24) {
+	if (max(abs(shadowpos[0].x - 0.25), abs(shadowpos[0].y - 0.25)) < 0.247) {
 		return calcShadowFactor(shadowpos[0]);
 	}
 
-	if (max(abs(shadowpos[1].x - 0.25), abs(shadowpos[1].y - 0.75)) < 0.24) {
+	if (max(abs(shadowpos[1].x - 0.25), abs(shadowpos[1].y - 0.75)) < 0.247) {
 		return calcShadowFactor(shadowpos[1]);
 	}
 
-	if (max(abs(shadowpos[2].x - 0.75), abs(shadowpos[2].y - 0.25)) < 0.24) {
+	if (max(abs(shadowpos[2].x - 0.75), abs(shadowpos[2].y - 0.25)) < 0.247) {
 		return calcShadowFactor(shadowpos[2]);
 	}
 	

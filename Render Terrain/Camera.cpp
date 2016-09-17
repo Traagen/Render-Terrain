@@ -2,7 +2,7 @@
 Camera.cpp
 
 Author:			Chris Serson
-Last Edited:	August 18, 2016
+Last Edited:	September 15, 2016
 
 Description:	Class for creating and controlling the camera
 */
@@ -14,7 +14,8 @@ Camera::Camera(int h, int w) {
 	mWidth = w;
 	mHeight = h;
 	mVFOV = 60.0f;
-	mHFOV = mVFOV * (float)w / (float)h;
+	double tmp = atan(tan(XMConvertToRadians(mVFOV) * 0.5) * w / h) * 2.0;
+	mHFOV = XMConvertToDegrees((float)tmp);
 
 	// build projection matrix
 	XMMATRIX proj = XMMatrixPerspectiveFovLH(XMConvertToRadians(mVFOV), (float)w / (float)h, 0.1f, 3000.0f);
