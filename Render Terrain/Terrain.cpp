@@ -2,7 +2,7 @@
 Terrain.cpp
 
 Author:			Chris Serson
-Last Edited:	September 5, 2016
+Last Edited:	September 20, 2016
 
 Description:	Class for loading a heightmap and rendering as a terrain.
 */
@@ -18,17 +18,17 @@ Terrain::Terrain() {
 	maDispImage = nullptr;
 	maVertices = nullptr;
 	maIndices = nullptr;
+	mpDetailMaps = nullptr;
 
 	for (int i = 0; i < 4; ++i) {
 		maDetailImages[i] = nullptr;
-		mpDetailMaps[i] = nullptr;
 	}
 
 	LoadHeightMap("heightmap6.png");
 	LoadDisplacementMap("displacementmap.png", "displacementmapnormals.png");
 	LoadDetailMap(0, "grassnormalmap.png");
-	LoadDetailMap(1, "dirtnormalmap.png");
-	LoadDetailMap(2, "rocknormalmap.png");
+	LoadDetailMap(1, "rocknormalmap.png");
+	LoadDetailMap(2, "rock2normalmap.png");
 	LoadDetailMap(3, "snownormalmap.png");
 
 	CreateMesh3D();
@@ -57,12 +57,12 @@ Terrain::~Terrain() {
 		mpVertexBuffer = nullptr;
 	}
 
-	for (int i = 0; i < 4; ++i) {
-		if (mpDetailMaps[i]) {
-			mpDetailMaps[i]->Release();
-			mpDetailMaps[i] = nullptr;
-		}
+	if (mpDetailMaps) {
+		mpDetailMaps->Release();
+		mpDetailMaps = nullptr;
+	}
 
+	for (int i = 0; i < 4; ++i) {
 		if (maDetailImages[i]) delete[] maDetailImages[i];
 	}
 
@@ -314,15 +314,15 @@ void Terrain::LoadDisplacementMap(const char* fnMap, const char* fnNMap) {
 void Terrain::LoadDetailMap(int index, const char* fnMap) {
 	// load the black and white heightmap png file. Data is RGBA unsigned char.
 	unsigned char* tmpMap;
-	unsigned error = lodepng_decode32_file(&tmpMap, &mDetailWidths[index], &mDetailHeights[index], fnMap);
+	unsigned error = lodepng_decode32_file(&tmpMap, &mDetailWidth, &mDetailHeight, fnMap);
 	if (error) {
 		throw GFX_Exception("Error loading terrain detail map texture.");
 	}
 
 	// Convert the height values to a float.
-	maDetailImages[index] = new float[mDetailWidths[index] * mDetailHeights[index] * 4]; // one slot for the height and 3 for the normal at the point.
+	maDetailImages[index] = new float[mDetailWidth * mDetailHeight * 4]; // one slot for the height and 3 for the normal at the point.
 										  // in this first loop, just copy the height value. We're going to scale it here as well.
-	for (unsigned int i = 0; i < mDetailWidths[index] * mDetailHeights[index] * 4; ++i) {
+	for (unsigned int i = 0; i < mDetailWidth * mDetailHeight * 4; ++i) {
 		// convert values to float between 0 and 1.
 		// store height value as a floating point value between 0 and 1.
 		maDetailImages[index][i] = (float)tmpMap[i] / 255.0f;

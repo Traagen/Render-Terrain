@@ -2,7 +2,7 @@
 Terrain.h
 
 Author:			Chris Serson
-Last Edited:	September 5, 2016
+Last Edited:	September 20, 2016
 
 Description:	Class for loading a heightmap and rendering as a terrain.
 
@@ -42,13 +42,13 @@ public:
 	UINT GetSizeOfIndexBuffer() { return mIndexCount * sizeof(UINT); }
 	UINT GetSizeOfHeightMap() { return mWidth * mDepth * sizeof(float); }
 	UINT GetSizeOfDisplacementMap() { return mDispWidth * mDispDepth * 4 * sizeof(float); }
-	UINT GetSizeOfDetailMap(int index) { return sizeof(float) * 4 * mDetailHeights[index] * mDetailWidths[index]; }
+	UINT GetSizeOfDetailMap() { return sizeof(float) * 4 * mDetailHeight * mDetailWidth; }
 	UINT GetHeightMapWidth() { return mWidth; }
 	UINT GetHeightMapDepth() { return mDepth; }
 	UINT GetDisplacementMapWidth() { return mDispWidth; }
 	UINT GetDisplacementMapDepth() { return mDispDepth; }
-	UINT GetDetailMapWidth(int index) { return mDetailWidths[index]; }
-	UINT GetDetailMapHeight(int index) { return mDetailHeights[index]; }
+	UINT GetDetailMapWidth() { return mDetailWidth; }
+	UINT GetDetailMapHeight() { return mDetailHeight; }
 	int GetBaseHeight() { return mBaseHeight; }
 	float* GetHeightMapTextureData() { return maImage; }
 	float* GetDisplacementMapTextureData() { return maDispImage; }
@@ -61,7 +61,7 @@ public:
 	void SetIndexBufferView(D3D12_INDEX_BUFFER_VIEW ibv) { mIBV = ibv; }
 	void SetHeightmapResource(ID3D12Resource* tex) { mpHeightmap = tex; }
 	void SetDisplacementMapResource(ID3D12Resource* tex) { mpDisplacementMap = tex; }
-	void SetDetailMapResource(int index, ID3D12Resource* tex) { mpDetailMaps[index] = tex; }
+	void SetDetailMapResource(ID3D12Resource* tex) { mpDetailMaps = tex; }
 	void SetVertexBufferResource(ID3D12Resource* vb) { mpVertexBuffer = vb; }
 	void SetIndexBufferResource(ID3D12Resource* ib) { mpIndexBuffer = ib; }
 
@@ -81,7 +81,7 @@ private:
 	
 	ID3D12Resource*				mpHeightmap;
 	ID3D12Resource*				mpDisplacementMap;
-	ID3D12Resource*				mpDetailMaps[4];
+	ID3D12Resource*				mpDetailMaps;
 	ID3D12Resource*				mpVertexBuffer;
 	ID3D12Resource*				mpIndexBuffer;
 	D3D12_VERTEX_BUFFER_VIEW	mVBV;
@@ -93,8 +93,8 @@ private:
 	unsigned int				mDepth;
 	unsigned int				mDispWidth;
 	unsigned int				mDispDepth;
-	unsigned int				mDetailWidths[4];
-	unsigned int				mDetailHeights[4];
+	unsigned int				mDetailWidth;
+	unsigned int				mDetailHeight;
 	int							mBaseHeight;
 	unsigned long				mVertexCount;
 	unsigned long				mIndexCount;

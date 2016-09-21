@@ -2,7 +2,7 @@
 Scene.cpp
 
 Author:			Chris Serson
-Last Edited:	September 5, 2016
+Last Edited:	September 20, 2016
 
 Description:	Class for creating, managing, and rendering a scene.
 */
@@ -136,7 +136,7 @@ void Scene::InitSRVCBVHeap() {
 	D3D12_DESCRIPTOR_HEAP_DESC descCBVSRVHeap = {};
 
 	// create the SRV heap that points at the heightmap and CBV.
-	descCBVSRVHeap.NumDescriptors = 26;
+	descCBVSRVHeap.NumDescriptors = 23;// 26;
 	descCBVSRVHeap.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	descCBVSRVHeap.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
@@ -298,7 +298,7 @@ void Scene::InitPipelineTerrain3D() {
 	paramsRoot[4].InitAsDescriptorTable(1, &rangesRoot[4]);
 
 	// create a slot for the detail maps.
-	rangesRoot[5].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 4, 3);
+	rangesRoot[5].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 3);
 	paramsRoot[5].InitAsDescriptorTable(1, &rangesRoot[5], D3D12_SHADER_VISIBILITY_PIXEL);
 
 	// create our texture samplers for the heightmap.
@@ -494,7 +494,8 @@ void Scene::InitTerrainResources() {
 	ID3D12Resource* heightmap;
 	mpGFX->CreateDefaultBuffer(heightmap, &descTex);
 	heightmap->SetName(L"Terrain Heightmap Texture Buffer");
-	const auto sizeofHeightmap = GetRequiredIntermediateSize(heightmap, 0, 1);
+	auto sizeofHeightmap = GetRequiredIntermediateSize(heightmap, 0, 1);
+	sizeofHeightmap = pow(2, ceilf(log(sizeofHeightmap) / log(2)));
 
 	// prepare heightmap data for upload.
 	D3D12_SUBRESOURCE_DATA dataTex = {};
@@ -555,7 +556,8 @@ void Scene::InitTerrainResources() {
 	ID3D12Resource* displacementmap;
 	mpGFX->CreateDefaultBuffer(displacementmap, &descDispTex);
 	displacementmap->SetName(L"Terrain Displacement Map Texture Buffer");
-	const auto sizeofDispMap = GetRequiredIntermediateSize(displacementmap, 0, 1);
+	auto sizeofDispMap = GetRequiredIntermediateSize(displacementmap, 0, 1);
+	sizeofDispMap = pow(2, ceilf(log(sizeofDispMap) / log(2)));
 
 	// prepare displacement map data for upload.
 	D3D12_SUBRESOURCE_DATA dataDispTex = {};
@@ -564,33 +566,33 @@ void Scene::InitTerrainResources() {
 	dataDispTex.SlicePitch = ddepth * dwidth * 4 * sizeof(float);
 
 	// Create the detail map texture buffers.
-	D3D12_SUBRESOURCE_DATA dataDetailTex[4]; 
-	ID3D12Resource* detailmap[4];
-	D3D12_RESOURCE_DESC	descDetailTex[4];
-	size_t sizeofDetailMap[4];
+	D3D12_SUBRESOURCE_DATA dataDetailTex[4];
+	ID3D12Resource* detailmap;
+	D3D12_RESOURCE_DESC	descDetailTex;
+	size_t sizeofDetailMap;
 
+	UINT detwidth = T.GetDetailMapWidth();
+	UINT detdepth = T.GetDetailMapHeight();
+	descDetailTex = {};
+	descDetailTex.MipLevels = 1;
+	descDetailTex.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+	descDetailTex.Width = detwidth;
+	descDetailTex.Height = detdepth;
+	descDetailTex.Flags = D3D12_RESOURCE_FLAG_NONE;
+	descDetailTex.DepthOrArraySize = 4;
+	descDetailTex.SampleDesc.Count = 1;
+	descDetailTex.SampleDesc.Quality = 0;
+	descDetailTex.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+	
+	mpGFX->CreateDefaultBuffer(detailmap, &descDetailTex);
+	detailmap->SetName(L"Terrain Detail Map Texture Array Buffer");
+	sizeofDetailMap = GetRequiredIntermediateSize(detailmap, 0, 4);
+	// if we're uploading everything in one buffer, we need our textures to all be powers of 2
+	// or else the command list won't close as data won't be aligned properly.
+	sizeofDetailMap = pow(2, ceilf(log(sizeofDetailMap) / log(2)));
+
+	// prepare detail map data for upload.
 	for (int i = 0; i < 4; ++i) {
-		UINT detwidth = T.GetDetailMapWidth(i);
-		UINT detdepth = T.GetDetailMapHeight(i);
-		descDetailTex[i] = {};
-		descDetailTex[i].MipLevels = 1;
-		descDetailTex[i].Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
-		descDetailTex[i].Width = detwidth;
-		descDetailTex[i].Height = detdepth;
-		descDetailTex[i].Flags = D3D12_RESOURCE_FLAG_NONE;
-		descDetailTex[i].DepthOrArraySize = 1;
-		descDetailTex[i].SampleDesc.Count = 1;
-		descDetailTex[i].SampleDesc.Quality = 0;
-		descDetailTex[i].Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-
-		mpGFX->CreateDefaultBuffer(detailmap[i], &descDetailTex[i]);
-		detailmap[i]->SetName(L"Terrain Detail Map Texture Buffer");
-		sizeofDetailMap[i] = GetRequiredIntermediateSize(detailmap[i], 0, 1);
-		// if we're uploading everything in one buffer, we need our textures to all be powers of 2
-		// or else the command list won't close as data won't be aligned properly.
-		sizeofDetailMap[i] = pow(2, ceilf(log(sizeofDetailMap[i]) / log(2)));
-
-		// prepare detail map data for upload.
 		dataDetailTex[i] = {};
 		dataDetailTex[i].pData = T.GetDetailMapTextureData(i);
 		dataDetailTex[i].RowPitch = detwidth * 4 * sizeof(float);
@@ -603,9 +605,9 @@ void Scene::InitTerrainResources() {
 	try {
 		ID3D12Resource* upload;
 		// add 11111111111 to force into catch block
-		mpGFX->CreateUploadBuffer(upload, &CD3DX12_RESOURCE_DESC::Buffer(sizeofHeightmap + sizeofVertexBuffer + sizeofIndexBuffer + sizeofConstantBuffer + sizeofDispMap + sizeofDetailMap[0] + sizeofDetailMap[1] + sizeofDetailMap[2] + sizeofDetailMap[3]));
+		mpGFX->CreateUploadBuffer(upload, &CD3DX12_RESOURCE_DESC::Buffer(sizeofHeightmap + sizeofVertexBuffer + sizeofIndexBuffer + sizeofConstantBuffer + sizeofDispMap + sizeofDetailMap));
 		mlTemporaryUploadBuffers.push_back(upload);
-		
+
 		// upload heightmap data
 		UpdateSubresources(cmdList, heightmap, upload, 0, 0, 1, &dataTex);
 
@@ -613,40 +615,31 @@ void Scene::InitTerrainResources() {
 		UpdateSubresources(cmdList, displacementmap, upload, sizeofHeightmap, 0, 1, &dataDispTex);
 
 		// upload detail map data
-		UpdateSubresources(cmdList, detailmap[0], upload, sizeofHeightmap + sizeofDispMap, 0, 1, &dataDetailTex[0]);
-		UpdateSubresources(cmdList, detailmap[1], upload, sizeofHeightmap + sizeofDispMap + sizeofDetailMap[0], 0, 1, &dataDetailTex[1]);
-		UpdateSubresources(cmdList, detailmap[2], upload, sizeofHeightmap + sizeofDispMap + sizeofDetailMap[0] + sizeofDetailMap[1], 0, 1, &dataDetailTex[2]);
-		UpdateSubresources(cmdList, detailmap[3], upload, sizeofHeightmap + sizeofDispMap + sizeofDetailMap[0] + sizeofDetailMap[1] + sizeofDetailMap[2], 0, 1, &dataDetailTex[3]);
+		UpdateSubresources(cmdList, detailmap, upload, sizeofHeightmap + sizeofDispMap, 0, 4, dataDetailTex);
 
 		// upload vertex buffer data
-		UpdateSubresources(cmdList, vertexbuffer, upload, sizeofHeightmap + sizeofDispMap + sizeofDetailMap[0] + sizeofDetailMap[1] + sizeofDetailMap[2] + sizeofDetailMap[3], 0, 1, &dataVB);
+		UpdateSubresources(cmdList, vertexbuffer, upload, sizeofHeightmap + sizeofDispMap + sizeofDetailMap, 0, 1, &dataVB);
 
 		// upload index buffer data
-		UpdateSubresources(cmdList, indexbuffer, upload, sizeofHeightmap + sizeofDispMap + sizeofDetailMap[0] + sizeofDetailMap[1] + sizeofDetailMap[2] + sizeofDetailMap[3] + sizeofVertexBuffer, 0, 1, &dataIB);
+		UpdateSubresources(cmdList, indexbuffer, upload, sizeofHeightmap + sizeofDispMap + sizeofDetailMap + sizeofVertexBuffer, 0, 1, &dataIB);
 
 		// upload the constant buffer data
-		UpdateSubresources(cmdList, constantbuffer, upload, sizeofHeightmap + sizeofDispMap + sizeofDetailMap[0] + sizeofDetailMap[1] + sizeofDetailMap[2] + sizeofDetailMap[3] + sizeofVertexBuffer + sizeofIndexBuffer, 0, 1, &dataCB);
+		UpdateSubresources(cmdList, constantbuffer, upload, sizeofHeightmap + sizeofDispMap + sizeofDetailMap + sizeofVertexBuffer + sizeofIndexBuffer, 0, 1, &dataCB);
 	} catch (GFX_Exception e) {
 		// create 5 separate upload buffers
-		ID3D12Resource *uploadHeightmap, *uploadVB, *uploadIB, *uploadCB, *uploadDisplacementMap, *uploadDetailMap[4];
+		ID3D12Resource *uploadHeightmap, *uploadVB, *uploadIB, *uploadCB, *uploadDisplacementMap, *uploadDetailMap;
 		mpGFX->CreateUploadBuffer(uploadHeightmap, &CD3DX12_RESOURCE_DESC::Buffer(sizeofHeightmap));
 		mpGFX->CreateUploadBuffer(uploadVB, &CD3DX12_RESOURCE_DESC::Buffer(sizeofVertexBuffer));
 		mpGFX->CreateUploadBuffer(uploadIB, &CD3DX12_RESOURCE_DESC::Buffer(sizeofIndexBuffer));
 		mpGFX->CreateUploadBuffer(uploadCB, &CD3DX12_RESOURCE_DESC::Buffer(sizeofConstantBuffer));
 		mpGFX->CreateUploadBuffer(uploadDisplacementMap, &CD3DX12_RESOURCE_DESC::Buffer(sizeofDispMap));
-		mpGFX->CreateUploadBuffer(uploadDetailMap[0], &CD3DX12_RESOURCE_DESC::Buffer(sizeofDetailMap[0]));
-		mpGFX->CreateUploadBuffer(uploadDetailMap[1], &CD3DX12_RESOURCE_DESC::Buffer(sizeofDetailMap[1]));
-		mpGFX->CreateUploadBuffer(uploadDetailMap[2], &CD3DX12_RESOURCE_DESC::Buffer(sizeofDetailMap[2]));
-		mpGFX->CreateUploadBuffer(uploadDetailMap[3], &CD3DX12_RESOURCE_DESC::Buffer(sizeofDetailMap[3]));
+		mpGFX->CreateUploadBuffer(uploadDetailMap, &CD3DX12_RESOURCE_DESC::Buffer(sizeofDetailMap));
 		mlTemporaryUploadBuffers.push_back(uploadHeightmap);
 		mlTemporaryUploadBuffers.push_back(uploadVB);
 		mlTemporaryUploadBuffers.push_back(uploadIB);
 		mlTemporaryUploadBuffers.push_back(uploadCB);
 		mlTemporaryUploadBuffers.push_back(uploadDisplacementMap);
-		mlTemporaryUploadBuffers.push_back(uploadDetailMap[0]);
-		mlTemporaryUploadBuffers.push_back(uploadDetailMap[1]);
-		mlTemporaryUploadBuffers.push_back(uploadDetailMap[2]);
-		mlTemporaryUploadBuffers.push_back(uploadDetailMap[3]);
+		mlTemporaryUploadBuffers.push_back(uploadDetailMap);
 
 		// upload heightmap data
 		UpdateSubresources(cmdList, heightmap, uploadHeightmap, 0, 0, 1, &dataTex);
@@ -664,9 +657,9 @@ void Scene::InitTerrainResources() {
 		UpdateSubresources(cmdList, displacementmap, uploadDisplacementMap, 0, 0, 1, &dataDispTex);
 
 		// upload detail map data
-		for (int i = 0; i < 4; ++i) {
-			UpdateSubresources(cmdList, detailmap[i], uploadDetailMap[i], 0, 0, 1, &dataDetailTex[i]);
-		}
+		//for (int i = 0; i < 4; ++i) {
+		UpdateSubresources(cmdList, detailmap, uploadDetailMap, 0, 0, 4, dataDetailTex);
+		//}
 	}
 
 	// set resource barriers to inform GPU that data is ready for use.
@@ -680,10 +673,8 @@ void Scene::InitTerrainResources() {
 		D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER));
 	cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(displacementmap, D3D12_RESOURCE_STATE_COPY_DEST,
 		D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
-	for (int i = 0; i < 4; ++i) {
-		cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(detailmap[i], D3D12_RESOURCE_STATE_COPY_DEST,
-			D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
-	}
+	cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(detailmap, D3D12_RESOURCE_STATE_COPY_DEST,
+		D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
 
 	// create and save vertex buffer view to Terrain object.
 	D3D12_VERTEX_BUFFER_VIEW bvVertex;
@@ -732,17 +723,16 @@ void Scene::InitTerrainResources() {
 	T.SetDisplacementMapResource(displacementmap);
 
 	// Create the SRV for the detail map texture and save to Terrain object.
-	D3D12_SHADER_RESOURCE_VIEW_DESC	descDetailSRV[4];
-	for (int i = 0; i < 4; ++i) {
-		descDetailSRV[i] = {};
-		descDetailSRV[i].Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-		descDetailSRV[i].Format = descDetailTex[i].Format;
-		descDetailSRV[i].ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-		descDetailSRV[i].Texture2D.MipLevels = descDetailTex[i].MipLevels;
-		CD3DX12_CPU_DESCRIPTOR_HANDLE handleDetailSRV(mlDescriptorHeaps[0]->GetCPUDescriptorHandleForHeapStart(), 22 + i, msizeofCBVSRVDescHeapIncrement);
-		mpGFX->CreateSRV(detailmap[i], &descDetailSRV[i], handleDetailSRV);
-		T.SetDetailMapResource(i, detailmap[i]);
-	}
+	D3D12_SHADER_RESOURCE_VIEW_DESC	descDetailSRV;
+	descDetailSRV = {};
+	descDetailSRV.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	descDetailSRV.Format = descDetailTex.Format;
+	descDetailSRV.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DARRAY;
+	descDetailSRV.Texture2DArray.ArraySize = descDetailTex.DepthOrArraySize;
+	descDetailSRV.Texture2DArray.MipLevels = descDetailTex.MipLevels;
+	CD3DX12_CPU_DESCRIPTOR_HANDLE handleDetailSRV(mlDescriptorHeaps[0]->GetCPUDescriptorHandleForHeapStart(), 22, msizeofCBVSRVDescHeapIncrement);
+	mpGFX->CreateSRV(detailmap, &descDetailSRV, handleDetailSRV);
+	T.SetDetailMapResource(detailmap);
 }
 
 void Scene::InitShadowMap(UINT width, UINT height) {
