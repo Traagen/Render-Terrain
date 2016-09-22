@@ -60,6 +60,20 @@ float3 triplanar_sample(Texture2D tex, SamplerState sam, float3 texcoord, float3
 	return x * blending.x + y * blending.y + z * blending.z;
 }
 
+float3 SampleDetailTriplanar(float3 uvw, float3 N, float index) {
+	float tighten = 0.4679f;
+	float3 blending = saturate(abs(N) - tighten);
+	// force weights to sum to 1.0
+	float b = blending.x + blending.y + blending.z;
+	blending /= float3(b, b, b);
+
+	float3 x = detailmaps.Sample(displacementsampler, float3(uvw.yz, index)).xyz;
+	float3 y = detailmaps.Sample(displacementsampler, float3(uvw.xz, index)).xyz;
+	float3 z = detailmaps.Sample(displacementsampler, float3(uvw.xy, index)).xyz;
+
+	return x * blending.x + y * blending.y + z * blending.z;
+}
+
 // code for putting together cotangent frame and perturbing normal from normal map.
 // code originally presented by Christian Schuler
 // http://www.thetenthplanet.de/archives/1180
@@ -253,6 +267,80 @@ float3 height_and_slope_based_normal(float height, float slope, float3 N, float3
 	return N1;
 }
 
+float3 GetTexByHeightPlanar(float height, float3 uvw, float index1, float index2) {
+	float bounds = scale * 0.005f;
+	float transition = scale * 0.6f;
+	float blendStart = transition - bounds;
+	float blendEnd = transition + bounds;
+	float3 c;
+
+	if (height < blendStart) {
+		c = detailmaps.Sample(displacementsampler, float3(uvw.xy, index1));
+	} else if (height < blendEnd) {
+		float3 c1 = detailmaps.Sample(displacementsampler, float3(uvw.xy, index1));
+		float3 c2 = detailmaps.Sample(displacementsampler, float3(uvw.xy, index2));
+
+		float blend = (height - blendStart) * (1.0f / (blendEnd - blendStart));
+
+		c = lerp(c1, c2, blend);
+	} else {
+		c = detailmaps.Sample(displacementsampler, float3(uvw.xy, index2));
+	}
+
+	return c;
+}
+
+float3 GetTexByHeightTriplanar(float height, float3 uvw, float3 N, float index1, float index2) {
+	float bounds = scale * 0.005f;
+	float transition = scale * 0.6f;
+	float blendStart = transition - bounds;
+	float blendEnd = transition + bounds;
+	float3 c;
+
+	if (height < blendStart) {
+		c = SampleDetailTriplanar(uvw, N, index1);
+	} else if (height < blendEnd) {
+		float3 c1 = SampleDetailTriplanar(uvw, N, index1);
+		float3 c2 = SampleDetailTriplanar(uvw, N, index2);
+
+		float blend = (height - blendStart) * (1.0f / (blendEnd - blendStart));
+
+		c = lerp(c1, c2, blend);
+	} else {
+		c = SampleDetailTriplanar(uvw, N, index2);
+	}
+
+	return c;
+}
+
+
+float3 GetTexBySlope(float slope, float height, float3 N, float3 uvw) {
+	float3 c;
+	float blend;
+	if (slope < 0.6f) {
+		blend = slope / 0.6f;
+		float3 c1 = GetTexByHeightPlanar(height, uvw, 0, 1);
+		float3 c2 = GetTexByHeightTriplanar(height, uvw, N, 2, 3);
+		c = lerp(c1, c2, blend);
+	} else if (slope < 0.65) {
+		blend = (slope - 0.6f) * (1.0f / (0.65f - 0.6f));
+		float3 c1 = GetTexByHeightTriplanar(height, uvw, N, 2, 3);
+		float3 c2 = SampleDetailTriplanar(uvw, N, 3);
+		c = lerp(c1, c2, blend);
+	} else {
+		c = SampleDetailTriplanar(uvw, N, 3);
+	}
+
+	return c;
+}
+
+float3 PerturbNormalByHeightSlope(float height, float slope, float3 N, float3 V, float3 uvw) {
+	float3 c = GetTexBySlope(slope, height, N, uvw) - 0.5f;
+
+	float3x3 TBN = cotangent_frame(N, -V, uvw);
+	return normalize(mul(c, TBN));
+}
+
 float3 dist_based_normal(float height, float slope, float3 N, float3 V, float3 uvw) {
 	float dist = length(V);
 
@@ -260,14 +348,15 @@ float3 dist_based_normal(float height, float slope, float3 N, float3 V, float3 u
 	//float3 N1 = perturb_normal_triplanar(N, V, uvw / 8, displacementmap, displacementsampler);
 
 	if (dist > 150) return N;
-	
+
 	if (dist > 100) {
 		float blend = (dist - 100.0f) / 50.0f;
 
 		return lerp(N1, N, blend);
 	}
 
-	float3 N2 = height_and_slope_based_normal(height, slope, N1, V, uvw);
+	//float3 N2 = height_and_slope_based_normal(height, slope, N1, V, uvw);
+	float3 N2 = PerturbNormalByHeightSlope(height, slope, N1, V, uvw);
 
 	if (dist > 50) return N1;
 
@@ -279,30 +368,6 @@ float3 dist_based_normal(float height, float slope, float3 N, float3 V, float3 u
 
 	return N2;
 }
-
-/*float3 dist_based_normal(float height, float slope, float3 N, float3 V, float3 uvw) {
-	float dist = length(V);
-
-	float3 norm = N;
-
-	if (dist <= 100) {
-		norm = perturb_normal(N, V, uvw / 8, displacementmap, displacementsampler);
-	} else if (dist <= 150) {
-		float blend = (dist - 100.0f) / 50.0f;
-
-		norm = lerp(perturb_normal(N, V, uvw / 8, displacementmap, displacementsampler), N, blend);
-	}
-
-	if (dist <= 25) {
-		norm = height_and_slope_based_normal(height, slope, norm, V, uvw);
-	} else if (dist <= 50) {
-		float blend = (dist - 25.0f) / 25.0f;
-
-		norm = lerp(height_and_slope_based_normal(height, slope, norm, V, uvw), norm, blend);
-	}
-
-	return norm;
-}*/
 
 float3 estimateNormal(float2 texcoord) {
 	float2 b = texcoord + float2(0.0f, -0.3f / depth);
@@ -383,7 +448,8 @@ float4 main(DS_OUTPUT input) : SV_TARGET
 //	norm = perturb_normal(norm, viewvector, input.worldpos / 32, displacementmap, displacementsampler);
 	norm = dist_based_normal(input.worldpos.z, acos(norm.z), norm, viewvector, input.worldpos / 4);
 	float4 color = height_and_slope_based_color(input.worldpos.z, acos(norm.z));
-//	float4 color = height_and_slope_based_texture(input.worldpos.z, acos(norm.z), norm, viewvector, input.worldpos / 4);
+	//float4 color = height_and_slope_based_texture(input.worldpos.z, acos(norm.z), norm, viewvector, input.worldpos / 4);
+//	float4 color = float4(GetTexBySlope(acos(norm.z), input.worldpos.z, norm, input.worldpos / 4), 1);
 
 	float shadowfactor = decideOnCascade(input.shadowpos);
 	float4 diffuse = max(shadowfactor, light.amb) * light.dif * dot(-light.dir, norm);

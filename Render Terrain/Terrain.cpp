@@ -27,9 +27,9 @@ Terrain::Terrain() {
 	LoadHeightMap("heightmap6.png");
 	LoadDisplacementMap("displacementmap.png", "displacementmapnormals.png");
 	LoadDetailMap(0, "grassnormalmap.png");
-	LoadDetailMap(1, "rocknormalmap.png");
-	LoadDetailMap(2, "rock2normalmap.png");
-	LoadDetailMap(3, "snownormalmap.png");
+	LoadDetailMap(1, "snownormalmap.png");
+	LoadDetailMap(2, "dirtnormalmap.png");
+	LoadDetailMap(3, "rocknormalmap.png");
 
 	CreateMesh3D();
 }
