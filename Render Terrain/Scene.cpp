@@ -2,7 +2,7 @@
 Scene.cpp
 
 Author:			Chris Serson
-Last Edited:	September 20, 2016
+Last Edited:	September 22, 2016
 
 Description:	Class for creating, managing, and rendering a scene.
 */
@@ -220,21 +220,18 @@ void Scene::InitShadowConstantBuffers() {
 void Scene::InitPipelineTerrain2D() {
 	// set up the Root Signature.
 	// create a descriptor table with 1 entry for the descriptor heap containing our SRV to the heightmap.
-	CD3DX12_DESCRIPTOR_RANGE rangeRoot[2];
-	CD3DX12_ROOT_PARAMETER paramsRoot[2];
+	CD3DX12_DESCRIPTOR_RANGE rangeRoot[1];
+	CD3DX12_ROOT_PARAMETER paramsRoot[1];
 	rangeRoot[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
 	paramsRoot[0].InitAsDescriptorTable(1, &rangeRoot[0]);
 
-	rangeRoot[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
-	paramsRoot[1].InitAsDescriptorTable(1, &rangeRoot[1]);
-	
 	// create our texture sampler for the heightmap.
 	CD3DX12_STATIC_SAMPLER_DESC	descSamplers[1];
 	descSamplers[0].Init(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
 
 	// It isn't really necessary to deny the other shaders access, but it does technically allow the GPU to optimize more.
 	CD3DX12_ROOT_SIGNATURE_DESC	descRoot;
-	descRoot.Init(2, paramsRoot, 1, descSamplers, D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
+	descRoot.Init(1, paramsRoot, 1, descSamplers, D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
 		D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
 		D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
 		D3D12_ROOT_SIGNATURE_FLAG_DENY_VERTEX_SHADER_ROOT_ACCESS);
@@ -566,7 +563,7 @@ void Scene::InitTerrainResources() {
 	dataDispTex.SlicePitch = ddepth * dwidth * 4 * sizeof(float);
 
 	// Create the detail map texture buffers.
-	D3D12_SUBRESOURCE_DATA dataDetailTex[4];
+	D3D12_SUBRESOURCE_DATA dataDetailTex[8];
 	ID3D12Resource* detailmap;
 	D3D12_RESOURCE_DESC	descDetailTex;
 	size_t sizeofDetailMap;
@@ -579,20 +576,20 @@ void Scene::InitTerrainResources() {
 	descDetailTex.Width = detwidth;
 	descDetailTex.Height = detdepth;
 	descDetailTex.Flags = D3D12_RESOURCE_FLAG_NONE;
-	descDetailTex.DepthOrArraySize = 4;
+	descDetailTex.DepthOrArraySize = 8;
 	descDetailTex.SampleDesc.Count = 1;
 	descDetailTex.SampleDesc.Quality = 0;
 	descDetailTex.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
 	
 	mpGFX->CreateDefaultBuffer(detailmap, &descDetailTex);
 	detailmap->SetName(L"Terrain Detail Map Texture Array Buffer");
-	sizeofDetailMap = GetRequiredIntermediateSize(detailmap, 0, 4);
+	sizeofDetailMap = GetRequiredIntermediateSize(detailmap, 0, 8);
 	// if we're uploading everything in one buffer, we need our textures to all be powers of 2
 	// or else the command list won't close as data won't be aligned properly.
 	sizeofDetailMap = pow(2, ceilf(log(sizeofDetailMap) / log(2)));
 
 	// prepare detail map data for upload.
-	for (int i = 0; i < 4; ++i) {
+	for (int i = 0; i < 8; ++i) {
 		dataDetailTex[i] = {};
 		dataDetailTex[i].pData = T.GetDetailMapTextureData(i);
 		dataDetailTex[i].RowPitch = detwidth * 4 * sizeof(float);
@@ -615,7 +612,7 @@ void Scene::InitTerrainResources() {
 		UpdateSubresources(cmdList, displacementmap, upload, sizeofHeightmap, 0, 1, &dataDispTex);
 
 		// upload detail map data
-		UpdateSubresources(cmdList, detailmap, upload, sizeofHeightmap + sizeofDispMap, 0, 4, dataDetailTex);
+		UpdateSubresources(cmdList, detailmap, upload, sizeofHeightmap + sizeofDispMap, 0, 8, dataDetailTex);
 
 		// upload vertex buffer data
 		UpdateSubresources(cmdList, vertexbuffer, upload, sizeofHeightmap + sizeofDispMap + sizeofDetailMap, 0, 1, &dataVB);
@@ -658,7 +655,7 @@ void Scene::InitTerrainResources() {
 
 		// upload detail map data
 		//for (int i = 0; i < 4; ++i) {
-		UpdateSubresources(cmdList, detailmap, uploadDetailMap, 0, 0, 4, dataDetailTex);
+		UpdateSubresources(cmdList, detailmap, uploadDetailMap, 0, 0, 8, dataDetailTex);
 		//}
 	}
 
@@ -857,25 +854,34 @@ void Scene::DrawShadowMap(ID3D12GraphicsCommandList* cmdList) {
 }
 
 void Scene::DrawTerrain(ID3D12GraphicsCommandList* cmdList) {
-	cmdList->SetPipelineState(mlPSOs[mDrawMode]);
-	cmdList->SetGraphicsRootSignature(mlRootSigs[mDrawMode]);
+	UINT draw;
+	if (mDrawMode != 1) draw = 0;
+	else draw = 1;
+	cmdList->SetPipelineState(mlPSOs[draw]);
+	cmdList->SetGraphicsRootSignature(mlRootSigs[draw]);
 
 	ID3D12DescriptorHeap* heaps[] = { mlDescriptorHeaps[0] };
 	cmdList->SetDescriptorHeaps(_countof(heaps), heaps);
 
 	// set the srv buffers.
 	// terrain
-	CD3DX12_GPU_DESCRIPTOR_HANDLE handleSRV(mlDescriptorHeaps[0]->GetGPUDescriptorHandleForHeapStart(), 0, msizeofCBVSRVDescHeapIncrement);
-	cmdList->SetGraphicsRootDescriptorTable(0, handleSRV);
-	// shadow map
-	CD3DX12_GPU_DESCRIPTOR_HANDLE handleSRV2(mlDescriptorHeaps[0]->GetGPUDescriptorHandleForHeapStart(), 17 + mFrame, msizeofCBVSRVDescHeapIncrement);
-	cmdList->SetGraphicsRootDescriptorTable(1, handleSRV2);
+	if (mDrawMode == 2) {
+		CD3DX12_GPU_DESCRIPTOR_HANDLE handleSRV(mlDescriptorHeaps[0]->GetGPUDescriptorHandleForHeapStart(), 17 + mFrame, msizeofCBVSRVDescHeapIncrement);
+		cmdList->SetGraphicsRootDescriptorTable(0, handleSRV);
+	} else {
+		CD3DX12_GPU_DESCRIPTOR_HANDLE handleSRV(mlDescriptorHeaps[0]->GetGPUDescriptorHandleForHeapStart(), 0, msizeofCBVSRVDescHeapIncrement);
+		cmdList->SetGraphicsRootDescriptorTable(0, handleSRV);
+	}
+		
+	if (draw) {
+		// shadow map
+		CD3DX12_GPU_DESCRIPTOR_HANDLE handleSRV2(mlDescriptorHeaps[0]->GetGPUDescriptorHandleForHeapStart(), 17 + mFrame, msizeofCBVSRVDescHeapIncrement);
+		cmdList->SetGraphicsRootDescriptorTable(1, handleSRV2);
 
-	if (mDrawMode) {
 		// set the constant buffers.
 		XMFLOAT4 frustum[6];
 		C.GetViewFrustum(frustum);
-		
+
 		PerFrameConstantBuffer constants;
 		constants.viewproj = C.GetViewProjectionMatrixTransposed();
 		for (int i = 0; i < 4; ++i) {
@@ -889,11 +895,12 @@ void Scene::DrawTerrain(ID3D12GraphicsCommandList* cmdList) {
 		constants.frustum[4] = frustum[4];
 		constants.frustum[5] = frustum[5];
 		constants.light = DNC.GetLight();
+		constants.useTextures = mUseTextures;
 		memcpy(mpPerFrameConstantsMapped[mFrame], &constants, sizeof(PerFrameConstantBuffer));
-		
+
 		CD3DX12_GPU_DESCRIPTOR_HANDLE handleCBV(mlDescriptorHeaps[0]->GetGPUDescriptorHandleForHeapStart(), 2 + mFrame, msizeofCBVSRVDescHeapIncrement);
 		cmdList->SetGraphicsRootDescriptorTable(2, handleCBV);
-
+		// terrain buffer data
 		CD3DX12_GPU_DESCRIPTOR_HANDLE handleCBV2(mlDescriptorHeaps[0]->GetGPUDescriptorHandleForHeapStart(), 1, msizeofCBVSRVDescHeapIncrement);
 		cmdList->SetGraphicsRootDescriptorTable(3, handleCBV2);
 
@@ -907,7 +914,7 @@ void Scene::DrawTerrain(ID3D12GraphicsCommandList* cmdList) {
 	}
 	
 	// mDrawMode = 0/false for 2D rendering and 1/true for 3D rendering
-	T.Draw(cmdList, (bool)mDrawMode);
+	T.Draw(cmdList, (bool)draw);
 	mFrame = (mFrame + 1) % 3;
 }
 
@@ -916,10 +923,7 @@ void Scene::Draw() {
 
 	ID3D12GraphicsCommandList* cmdList = mpGFX->GetCommandList();
 
-//	if (mDrawMode) {
-		// only render to the shadow map if we're rendering in 3D.
-		DrawShadowMap(cmdList);
-//	}
+	DrawShadowMap(cmdList);
 		
 	// set a clear color.
 	const float clearColor[] = { 0.2f, 0.6f, 1.0f, 1.0f };
@@ -963,11 +967,16 @@ void Scene::HandleKeyboardInput(UINT key) {
 		case _Z:
 			if (mDrawMode > 0) C.Translate(XMFLOAT3(0.0f, 0.0f, -MOVE_STEP));
 			break;
-		case _1: // draw in 2D.
+		case _1: // draw in 2D. draw heightmap.
 			mDrawMode = 0;
 			break;
-		case _2: // draw in 3D.
+		case _3: // draw in 3D.
 			mDrawMode = 1;
+			break;
+		case _2: // draw in 2D. draw shadow maps.
+			mDrawMode = 2;
+		case _T:
+			mUseTextures = !mUseTextures;
 			break;
 		case VK_SPACE:
 			DNC.TogglePause();

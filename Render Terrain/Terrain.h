@@ -2,7 +2,7 @@
 Terrain.h
 
 Author:			Chris Serson
-Last Edited:	September 20, 2016
+Last Edited:	September 22, 2016
 
 Description:	Class for loading a heightmap and rendering as a terrain.
 
@@ -88,7 +88,7 @@ private:
 	D3D12_INDEX_BUFFER_VIEW		mIBV;
 	float*						maImage;
 	float*						maDispImage;
-	float*						maDetailImages[4];
+	float*						maDetailImages[8];
 	unsigned int				mWidth;
 	unsigned int				mDepth;
 	unsigned int				mDispWidth;

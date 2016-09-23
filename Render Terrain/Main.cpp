@@ -2,11 +2,14 @@
 Main.cpp
 
 Author:			Chris Serson
-Last Edited:	July 6, 2016
+Last Edited:	September 22, 2016
 
 Description:	Render Terrain - Win32/DirectX 12 application.
 				Loads and displays a heightmap as a terrain.
-				Press T to toggle between 2D or 3D view.
+				Press T to toggle between textured or coloured.
+				Press 1 for 2D view.
+				Press 2 for Shadow Maps.
+				Press 3 for 3D view.
 */
 #include "Window.h"
 #include "Scene.h"
@@ -46,6 +49,8 @@ static void KeyDown(UINT key) {
 		case _Z:
 		case _1:
 		case _2:
+		case _3:
+		case _T:
 			pScene->HandleKeyboardInput(key);
 			break;
 	}

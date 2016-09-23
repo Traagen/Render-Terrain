@@ -2,7 +2,7 @@
 Terrain.cpp
 
 Author:			Chris Serson
-Last Edited:	September 20, 2016
+Last Edited:	September 22, 2016
 
 Description:	Class for loading a heightmap and rendering as a terrain.
 */
@@ -30,7 +30,10 @@ Terrain::Terrain() {
 	LoadDetailMap(1, "snownormalmap.png");
 	LoadDetailMap(2, "dirtnormalmap.png");
 	LoadDetailMap(3, "rocknormalmap.png");
-
+	LoadDetailMap(4, "grass.png");
+	LoadDetailMap(5, "snow.png");
+	LoadDetailMap(6, "dirt.png");
+	LoadDetailMap(7, "rock.png");
 	CreateMesh3D();
 }
 

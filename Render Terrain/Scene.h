@@ -2,7 +2,7 @@
 Scene.h
 
 Author:			Chris Serson
-Last Edited:	August 24, 2016
+Last Edited:	September 22, 2016
 
 Description:	Class for creating, managing, and rendering a scene.
 
@@ -13,7 +13,10 @@ Usage:			- Calling the constructor, either through Scene S(...);
 				- Requires a pointer to a Graphics object be passed in.
 				- Is hard-coded for Direct3D 12.
 				- Call Draw() in the main loop to render the scene.
-				- Pressing 1 or 2 toggles between 2D and 3D rendering.
+				- Press T to toggle between textured or coloured.
+				- Press 1 for 2D view.
+				- Press 2 for Shadow Maps.
+				- Press 3 for 3D view.
 				
 Future Work:	- Add support for multi-threaded rendering.
 				
@@ -36,6 +39,7 @@ struct PerFrameConstantBuffer {
 	XMFLOAT4	eye;
 	XMFLOAT4	frustum[6];
 	LightSource light;
+	BOOL		useTextures;
 };
 
 struct ShadowMapShaderConstants {
@@ -117,5 +121,6 @@ private:
 	PerFrameConstantBuffer*				mpPerFrameConstantsMapped[3];
 	ShadowMapShaderConstants*			maShadowConstantsMapped[3][4];
 	int									mFrame = 0;
+	bool								mUseTextures = false;
 };
 
