@@ -46,36 +46,9 @@ struct DS_OUTPUT
 // shadow map constants
 static const float SMAP_SIZE = 4096.0f;
 static const float SMAP_DX = 1.0f / SMAP_SIZE;
-//static const float4 colors[] = { { 0.22f, 0.52f, 0.11f, 1.0f }, { 0.8f, 0.8f, 0.8f, 1.0f }, { 0.35f, 0.2f, 0.0f, 1.0f },{ 0.42f, 0.42f, 0.52f, 1.0f } };
 static const float4 colors[] = { { 0.35f, 0.5f, 0.18f, 1.0f },{ 0.89f, 0.89f, 0.89f, 1.0f },{ 0.31f, 0.25f, 0.2f, 1.0f },{ 0.39f, 0.37f, 0.38f, 1.0f } };
 
-float3 triplanar_sample(Texture2D tex, SamplerState sam, float3 texcoord, float3 N) {
-	float tighten = 0.4679f;
-	float3 blending = saturate(abs(N) - tighten);
-	// force weights to sum to 1.0
-	float b = blending.x + blending.y + blending.z;
-	blending /= float3(b, b, b);
 
-	float3 x = tex.Sample(sam, texcoord.yz).xyz;
-	float3 y = tex.Sample(sam, texcoord.xz).xyz;
-	float3 z = tex.Sample(sam, texcoord.xy).xyz;
-
-	return x * blending.x + y * blending.y + z * blending.z;
-}
-
-float3 SampleDetailTriplanar(float3 uvw, float3 N, float index) {
-	float tighten = 0.4679f;
-	float3 blending = saturate(abs(N) - tighten);
-	// force weights to sum to 1.0
-	float b = blending.x + blending.y + blending.z;
-	blending /= float3(b, b, b);
-
-	float3 x = detailmaps.Sample(displacementsampler, float3(uvw.yz, index)).xyz;
-	float3 y = detailmaps.Sample(displacementsampler, float3(uvw.xz, index)).xyz;
-	float3 z = detailmaps.Sample(displacementsampler, float3(uvw.xy, index)).xyz;
-
-	return x * blending.x + y * blending.y + z * blending.z;
-}
 
 // code for putting together cotangent frame and perturbing normal from normal map.
 // code originally presented by Christian Schuler
@@ -108,186 +81,53 @@ float3 perturb_normal(float3 N, float3 V, float2 texcoord, Texture2D tex, Sample
 	return normalize(mul(map, TBN));
 }
 
-float3 perturb_normal_triplanar(float3 N, float3 V, float3 texcoord, Texture2D tex, SamplerState sam) {
-	float3 map = triplanar_sample(tex, sam, texcoord, N);
-	map = map - 0.5f;
-
-	float3x3 TBN = cotangent_frame(N, -V, texcoord);
-	return normalize(mul(map, TBN));
-}
-
-float3 sample_detailmap(float index, SamplerState sam, float3 uvw, float3 N) {
+float4 SampleDetailTriplanar(float3 uvw, float3 N, float index) {
 	float tighten = 0.4679f;
 	float3 blending = saturate(abs(N) - tighten);
 	// force weights to sum to 1.0
 	float b = blending.x + blending.y + blending.z;
 	blending /= float3(b, b, b);
 
-	float3 x = detailmaps.Sample(sam, float3(uvw.yz, index)).xyz;
-	float3 y = detailmaps.Sample(sam, float3(uvw.xz, index)).xyz;
-	float3 z = detailmaps.Sample(sam, float3(uvw.xy, index)).xyz;
+	float4 x = detailmaps.Sample(displacementsampler, float3(uvw.yz, index));
+	float4 y = detailmaps.Sample(displacementsampler, float3(uvw.xz, index));
+	float4 z = detailmaps.Sample(displacementsampler, float3(uvw.xy, index));
 
 	return x * blending.x + y * blending.y + z * blending.z;
 }
 
-float3 get_normal_from_detailmap(float3 N, float3 V, float3 uvw, float index, SamplerState sam) {
-	float3 map = sample_detailmap(index, sam, uvw, N);
-	map = map - 0.5f;
-
-	float3x3 TBN = cotangent_frame(N, -V, uvw);
-	return normalize(mul(map, TBN));
-}
-
-float3 sample_detailmap_slopebased(float slope, float3 N, float3 V, float3 uvw, float indexXY, float indexZ, SamplerState sam) {
-	if (slope < 0.25f) {
-		return detailmaps.Sample(sam, float3(uvw.xy, indexZ)).xyz;
-	}
-
-	float tighten = 0.4679f;
-	float3 blending = saturate(abs(N) - tighten);
-	// force weights to sum to 1.0
-	float b = blending.x + blending.y + blending.z;
-	blending /= float3(b, b, b);
-
-	float3 x = detailmaps.Sample(sam, float3(uvw.yz, indexXY)).xyz;
-	float3 y = detailmaps.Sample(sam, float3(uvw.xz, indexXY)).xyz;
-	float3 z = detailmaps.Sample(sam, float3(uvw.xy, indexXY)).xyz;
-
-	if (slope < 0.5f) {
-		float3 z2 = detailmaps.Sample(sam, float3(uvw.xy, indexZ)).xyz;
-
-		float blend = (slope - 0.25f) * (1.0f / (0.5f - 0.25f));
-
-		return lerp(z2, x * blending.x + y * blending.y + z * blending.z, blend);
-	}
-
-	return x * blending.x + y * blending.y + z * blending.z;
-}
-
-float3 get_normal_from_detailmap_slopebased(float slope, float3 N, float3 V, float3 uvw, float indexXY, float indexZ, SamplerState sam) {
-	float3 map = sample_detailmap_slopebased(slope, N, V, uvw, indexXY, indexZ, sam);
-	map = 2.0f * map - 1.0f;
-
-	float3x3 TBN = cotangent_frame(N, -V, uvw);
-	return normalize(mul(map, TBN));
-}
-
-float4 slope_based_color(float slope, float4 colorSteep, float4 colorFlat) {
-	if (slope < 0.25f) {
-		return colorFlat;
-	}
-
-	if (slope < 0.5f) {
-		float blend = (slope - 0.25f) * (1.0f / (0.5f - 0.25f));
-
-		return lerp(colorFlat, colorSteep, blend);
-	} else {
-		return colorSteep;
-	}
-}
-
-float4 height_and_slope_based_texture(float height, float slope, float3 N, float3 V, float3 uvw) {
+float3 GetTexByHeightPlanar(float height, float3 uvw, float low, float med, float high) {
 	float bounds = scale * 0.005f;
 	float transition = scale * 0.6f;
-	float greenBlendStart = transition - bounds;
-	float snowBlendEnd = transition + 2 * bounds;
-	float index1 = 1, index2 = 0, index3 = -1, index4;
-
-	if (height > snowBlendEnd) {
-		index1 = 2;
-		index2 = 3;
-	}
-	else if (height > greenBlendStart) {
-		index3 = 2;
-		index4 = 3;
-	}
-
-	float3 C1 = sample_detailmap_slopebased(slope, N, V, uvw, index1, index2, displacementsampler);
-
-	if (index3 != -1) {
-		float blend = (height - greenBlendStart) * (1.0f / (snowBlendEnd - greenBlendStart));
-
-		float3 C2 = sample_detailmap_slopebased(slope, N, V, uvw, index3, index4, displacementsampler);
-		return float4(lerp(C1, C2, blend), 1);
-	}
-
-	return float4(C1, 1);
-}
-
-float4 height_and_slope_based_color(float height, float slope) {
-	float4 colors[] = { { 0.22f, 0.52f, 0.11f, 1.0f },{ 0.35f, 0.2f, 0.0f, 1.0f },{ 0.42f, 0.42f, 0.52f, 1.0f },{ 0.8f, 0.8f, 0.8f, 1.0f } };
-	float bounds = scale * 0.005f;
-	float transition = scale * 0.6f;
-	float greenBlendEnd = transition + bounds;
-	float greenBlendStart = transition - bounds;
-	float snowBlendEnd = greenBlendEnd + 2 * bounds;
-	float index1 = 1, index2 = 0, index3 = -1, index4;
-
-	if (height > snowBlendEnd) {
-		index1 = 2;
-		index2 = 3;
-	} else if (height > greenBlendStart) {
-		index3 = 2;
-		index4 = 3;
-	}
-
-	float4 C1 = slope_based_color(slope, colors[index1], colors[index2]);
-
-	if (index3 != -1) {
-		float blend = (height - greenBlendStart) * (1.0f / (snowBlendEnd - greenBlendStart));
-
-		float4 C2 = slope_based_color(slope, colors[index3], colors[index4]);
-		return lerp(C1, C2, blend);
-	}
-
-	return C1;
-}
-
-float3 height_and_slope_based_normal(float height, float slope, float3 N, float3 V, float3 uvw) {
-	float bounds = scale * 0.005f;
-	float transition = scale * 0.6f;
-	float greenBlendStart = transition - bounds;
-	float snowBlendEnd = transition + 2 * bounds;
-	float index1 = 1, index2 = 0, index3 = -1, index4;
-	
-	if (height > snowBlendEnd) {
-		index1 = 2;
-		index2 = 3;
-	} else if (height > greenBlendStart) {
-		index3 = 2;
-		index4 = 3;
-	}
-
-	float3 N1 = get_normal_from_detailmap_slopebased(slope, N, V, uvw, index1, index2, displacementsampler);
-
-	if (index3 != -1) {
-		float blend = (height - greenBlendStart) * (1.0f / (snowBlendEnd - greenBlendStart));
-
-		float3 N2 = get_normal_from_detailmap_slopebased(slope, N, V, uvw, index3, index4, displacementsampler);
-		return lerp(N1, N2, blend);
-	}
-
-	return N1;
-}
-
-float3 GetTexByHeightPlanar(float height, float3 uvw, float index1, float index2) {
-	float bounds = scale * 0.005f;
-	float transition = scale * 0.6f;
-	float blendStart = transition - 2 * bounds;
-	float blendEnd = transition + 2 * bounds;
+	float lowBlendStart = transition - 2 * bounds;
+	float highBlendEnd = transition + 2 * bounds;
 	float3 c;
 
-	if (height < blendStart) {
-		c = detailmaps.Sample(displacementsampler, float3(uvw.xy, index1));
-	} else if (height < blendEnd) {
-		float3 c1 = detailmaps.Sample(displacementsampler, float3(uvw.xy, index1));
-		float3 c2 = detailmaps.Sample(displacementsampler, float3(uvw.xy, index2));
+	if (height < lowBlendStart) {
+		c = detailmaps.Sample(displacementsampler, float3(uvw.xy, low));
+	} else if (height < transition) {
+		float4 c1 = detailmaps.Sample(displacementsampler, float3(uvw.xy, low));
+		float4 c2 = detailmaps.Sample(displacementsampler, float3(uvw.xy, med));
 
-		float blend = (height - blendStart) * (1.0f / (blendEnd - blendStart));
+		float blend = (height - lowBlendStart) * (1.0f / (transition - lowBlendStart));
+		float ma = max(c1.a + 1 - blend, c2.a + blend) - 0.2f;
 
-		c = lerp(c1, c2, blend);
+		float b1 = max(c1.a + 1 - blend - ma, 0);
+		float b2 = max(c2.a + blend - ma, 0);
+
+		c = (c1.xyz * b1 + c2.xyz * b2) / (b1 + b2);
+	} else if (height < highBlendEnd) {
+		float4 c1 = detailmaps.Sample(displacementsampler, float3(uvw.xy, med));
+		float4 c2 = detailmaps.Sample(displacementsampler, float3(uvw.xy, high));
+
+		float blend = (height - transition) * (1.0f / (highBlendEnd - transition));
+		float ma = max(c1.a + 1 - blend, c2.a + blend) - 0.2f;
+
+		float b1 = max(c1.a + 1 - blend - ma, 0);
+		float b2 = max(c2.a + blend - ma, 0);
+
+		c = (c1.xyz * b1 + c2.xyz * b2) / (b1 + b2);
 	} else {
-		c = detailmaps.Sample(displacementsampler, float3(uvw.xy, index2));
+		c = detailmaps.Sample(displacementsampler, float3(uvw.xy, high));
 	}
 
 	return c;
@@ -303,10 +143,15 @@ float3 GetTexByHeightTriplanar(float height, float3 uvw, float3 N, float index1,
 	if (height < blendStart) {
 		c = SampleDetailTriplanar(uvw, N, index1);
 	} else if (height < blendEnd) {
-		float3 c1 = SampleDetailTriplanar(uvw, N, index1);
-		float3 c2 = SampleDetailTriplanar(uvw, N, index2);
+		float4 c1 = SampleDetailTriplanar(uvw, N, index1);
+		float4 c2 = SampleDetailTriplanar(uvw, N, index2);
 		float blend = (height - blendStart) * (1.0f / (blendEnd - blendStart));
-		c = lerp(c1, c2, blend);
+		float ma = max(c1.a + 1 - blend, c2.a + blend) - 0.2f;
+
+		float b1 = max(c1.a + 1 - blend - ma, 0);
+		float b2 = max(c2.a + blend - ma, 0);
+
+		c = (c1.xyz * b1 + c2.xyz * b2) / (b1 + b2);
 	} else {
 		c = SampleDetailTriplanar(uvw, N, index2);
 	}
@@ -314,34 +159,42 @@ float3 GetTexByHeightTriplanar(float height, float3 uvw, float3 N, float index1,
 	return c;
 }
 
-float4 GetColorByHeight(float height, float index1, float index2) {
+float4 GetColorByHeight(float height, float low, float med, float high) {
 	float bounds = scale * 0.005f;
 	float transition = scale * 0.6f;
-	float blendStart = transition - 2 * bounds;
-	float blendEnd = transition + 2 * bounds;
+	float lowBlendStart = transition - 2 * bounds;
+	float highBlendEnd = transition + 2 * bounds;
 	float4 c;
 
-	if (height < blendStart) {
-		c = colors[index1];
-	} else if (height < blendEnd) {
-		float4 c1 = colors[index1];
-		float4 c2 = colors[index2];
-		float blend = (height - blendStart) * (1.0f / (blendEnd - blendStart));
+	if (height < lowBlendStart) {
+		c = colors[low];
+	} else if (height < transition) {
+		float4 c1 = colors[low];
+		float4 c2 = colors[med];
+
+		float blend = (height - lowBlendStart) * (1.0f / (transition - lowBlendStart));
+
+		c = lerp(c1, c2, blend);
+	} else if (height < highBlendEnd) {
+		float4 c1 = colors[med];
+		float4 c2 = colors[high];
+
+		float blend = (height - transition) * (1.0f / (highBlendEnd - transition));
+
 		c = lerp(c1, c2, blend);
 	} else {
-		c = colors[index2];
+		c = colors[high];
 	}
 
 	return c;
 }
-
 
 float3 GetTexBySlope(float slope, float height, float3 N, float3 uvw, float startingIndex) {
 	float3 c;
 	float blend;
 	if (slope < 0.6f) {
 		blend = slope / 0.6f;
-		float3 c1 = GetTexByHeightPlanar(height, uvw, 0 + startingIndex, 1 + startingIndex);
+		float3 c1 = GetTexByHeightPlanar(height, uvw, 0 + startingIndex, 3 + startingIndex, 1 + startingIndex);
 		float3 c2 = GetTexByHeightTriplanar(height, uvw, N, 2 + startingIndex, 3 + startingIndex);
 		c = lerp(c1, c2, blend);
 	} else if (slope < 0.65f) {
@@ -361,12 +214,12 @@ float4 GetColorBySlope(float slope, float height) {
 	float blend;
 	if (slope < 0.6f) {
 		blend = slope / 0.6f;
-		float4 c1 = GetColorByHeight(height, 0, 1);
-		float4 c2 = GetColorByHeight(height, 2, 3);
+		float4 c1 = GetColorByHeight(height, 0, 3, 1);
+		float4 c2 = GetColorByHeight(height, 2, 3, 3);
 		c = lerp(c1, c2, blend);
 	} else if (slope < 0.65f) {
 		blend = (slope - 0.6f) * (1.0f / (0.65f - 0.6f));
-		float4 c1 = GetColorByHeight(height, 2, 3);
+		float4 c1 = GetColorByHeight(height, 2, 3, 3);
 		float4 c2 = colors[3];
 		c = lerp(c1, c2, blend);
 	} else {
@@ -398,9 +251,8 @@ float4 dist_based_texturing(float height, float slope, float3 N, float3 V, float
 float3 dist_based_normal(float height, float slope, float3 N, float3 V, float3 uvw) {
 	float dist = length(V);
 
-	float3 N1 = perturb_normal(N, V, uvw / 8, displacementmap, displacementsampler);
-	//float3 N1 = perturb_normal_triplanar(N, V, uvw / 8, displacementmap, displacementsampler);
-
+	float3 N1 = perturb_normal(N, V, uvw / 16, displacementmap, displacementsampler);
+	
 	if (dist > 150) return N;
 
 	if (dist > 100) {
@@ -409,7 +261,6 @@ float3 dist_based_normal(float height, float slope, float3 N, float3 V, float3 u
 		return lerp(N1, N, blend);
 	}
 
-	//float3 N2 = height_and_slope_based_normal(height, slope, N1, V, uvw);
 	float3 N2 = PerturbNormalByHeightSlope(height, slope, N1, V, uvw);
 
 	if (dist > 50) return N1;
@@ -499,9 +350,9 @@ float4 main(DS_OUTPUT input) : SV_TARGET
 	float3 norm = estimateNormal(input.worldpos / width);
 	float3 viewvector = eye.xyz - input.worldpos;
 	
-	norm = dist_based_normal(input.worldpos.z, acos(norm.z), norm, viewvector, input.worldpos / 4);
+	norm = dist_based_normal(input.worldpos.z, acos(norm.z), norm, viewvector, input.worldpos / 2);
 	float4 color;
-	if (useTextures) color = dist_based_texturing(input.worldpos.z, acos(norm.z), norm, viewvector, input.worldpos / 4);
+	if (useTextures) color = dist_based_texturing(input.worldpos.z, acos(norm.z), norm, viewvector, input.worldpos / 2);
 	else color = GetColorBySlope(acos(norm.z), input.worldpos.z);
 
 	float shadowfactor = decideOnCascade(input.shadowpos);

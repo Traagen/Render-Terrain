@@ -2,7 +2,7 @@
 Terrain.h
 
 Author:			Chris Serson
-Last Edited:	September 22, 2016
+Last Edited:	September 23, 2016
 
 Description:	Class for loading a heightmap and rendering as a terrain.
 
@@ -75,7 +75,7 @@ private:
 	void LoadHeightMap(const char* fnHeightMap);
 	// load the specified file containing a displacement map used for smaller geometry detail.
 	void LoadDisplacementMap(const char* fnMap, const char* fnNMap);
-	void LoadDetailMap(int index, const char* fnMap);
+	void LoadDetailDepthMap(int index, const char* fnDiffuse, const char* fnDepth);
 	// calculate the minimum and maximum z values for vertices between the provide bounds.
 	XMFLOAT2 CalcZBounds(Vertex topLeft, Vertex bottomRight);
 	

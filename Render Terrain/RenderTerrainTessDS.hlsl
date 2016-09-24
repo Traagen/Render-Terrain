@@ -70,24 +70,6 @@ float3 estimateNormal(float2 texcoord) {
 	return normalize(float3(x, y, z));
 }
 
-// takes x, y, and z texture coordinates and the normal and performs tri-planar mapping to
-// calculate the displacement value from the displacement map.
-float triplanar_displacement(float3 tex, float3 norm) {
-	float3 blending = abs(norm);
-	blending = normalize(max(blending, 0.00001)); // force weights to sum to 1.0
-//	blending = pow(max(blending, 0.0), 0.5f);
-	float b = blending.x + blending.y + blending.z;
-	blending /= float3(b, b, b);
-
-	float x = displacementmap.SampleLevel(displacementsampler, tex.yz, 0.0f).w;
-	float y = displacementmap.SampleLevel(displacementsampler, tex.xz, 0.0f).w;
-	float z = displacementmap.SampleLevel(displacementsampler, tex.xy, 0.0f).w;
-	float h = x * blending.x + y * blending.y + z * blending.z;
-	h =  h - 0.5f;
-
-	return h;
-}
-
 [domain("quad")]
 DS_OUTPUT main(
 	HS_CONSTANT_DATA_OUTPUT input,
@@ -111,7 +93,6 @@ DS_OUTPUT main(
 	
 	float3 norm = estimateNormal(output.worldpos / width);
 	output.worldpos += norm * 0.5f * (2.0f * displacementmap.SampleLevel(displacementsampler, output.worldpos / 32, 0.0f).w - 1.0f);
-//	output.worldpos += norm * triplanar_displacement(output.worldpos / 32, norm);
 
 	// generate coordinates transformed into view/projection space.
 	output.pos = float4(output.worldpos, 1.0f);

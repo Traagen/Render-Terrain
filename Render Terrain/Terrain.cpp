@@ -2,7 +2,7 @@
 Terrain.cpp
 
 Author:			Chris Serson
-Last Edited:	September 22, 2016
+Last Edited:	September 23, 2016
 
 Description:	Class for loading a heightmap and rendering as a terrain.
 */
@@ -20,20 +20,20 @@ Terrain::Terrain() {
 	maIndices = nullptr;
 	mpDetailMaps = nullptr;
 
-	for (int i = 0; i < 4; ++i) {
+	for (int i = 0; i < 8; ++i) {
 		maDetailImages[i] = nullptr;
 	}
 
 	LoadHeightMap("heightmap6.png");
 	LoadDisplacementMap("displacementmap.png", "displacementmapnormals.png");
-	LoadDetailMap(0, "grassnormalmap.png");
-	LoadDetailMap(1, "snownormalmap.png");
-	LoadDetailMap(2, "dirtnormalmap.png");
-	LoadDetailMap(3, "rocknormalmap.png");
-	LoadDetailMap(4, "grass.png");
-	LoadDetailMap(5, "snow.png");
-	LoadDetailMap(6, "dirt.png");
-	LoadDetailMap(7, "rock.png");
+	LoadDetailDepthMap(0, "grassnormalmap.png", "grassdepthmap.png");
+	LoadDetailDepthMap(1, "snownormalmap.png", "snowdepthmap.png");
+	LoadDetailDepthMap(2, "dirtnormalmap.png", "dirtdepthmap.png");
+	LoadDetailDepthMap(3, "rocknormalmap.png", "rockdepthmap.png");
+	LoadDetailDepthMap(4, "grass.png", "grassdepthmap.png");
+	LoadDetailDepthMap(5, "snow.png", "snowdepthmap.png");
+	LoadDetailDepthMap(6, "dirt.png", "dirtdepthmap.png");
+	LoadDetailDepthMap(7, "rock.png", "rockdepthmap.png");
 	CreateMesh3D();
 }
 
@@ -65,7 +65,7 @@ Terrain::~Terrain() {
 		mpDetailMaps = nullptr;
 	}
 
-	for (int i = 0; i < 4; ++i) {
+	for (int i = 0; i < 8; ++i) {
 		if (maDetailImages[i]) delete[] maDetailImages[i];
 	}
 
@@ -314,22 +314,32 @@ void Terrain::LoadDisplacementMap(const char* fnMap, const char* fnNMap) {
 	delete[] tmpNMap;
 }
 
-void Terrain::LoadDetailMap(int index, const char* fnMap) {
+void Terrain::LoadDetailDepthMap(int index, const char* fnDiffuse, const char* fnDepth) {
 	// load the black and white heightmap png file. Data is RGBA unsigned char.
-	unsigned char* tmpMap;
-	unsigned error = lodepng_decode32_file(&tmpMap, &mDetailWidth, &mDetailHeight, fnMap);
+	unsigned char* tmpDiffuseMap;
+	unsigned char* tmpDepthMap;
+	unsigned error = lodepng_decode32_file(&tmpDiffuseMap, &mDetailWidth, &mDetailHeight, fnDiffuse);
 	if (error) {
-		throw GFX_Exception("Error loading terrain detail map texture.");
+		throw GFX_Exception("Error loading terrain diffuse map texture.");
+	}
+
+	error = lodepng_decode32_file(&tmpDepthMap, &mDetailWidth, &mDetailHeight, fnDepth);
+	if (error) {
+		throw GFX_Exception("Error loading terrain depth map texture.");
 	}
 
 	// Convert the height values to a float.
 	maDetailImages[index] = new float[mDetailWidth * mDetailHeight * 4]; // one slot for the height and 3 for the normal at the point.
-										  // in this first loop, just copy the height value. We're going to scale it here as well.
-	for (unsigned int i = 0; i < mDetailWidth * mDetailHeight * 4; ++i) {
+																		 // in this first loop, just copy the height value. We're going to scale it here as well.
+	for (unsigned int i = 0; i < mDetailWidth * mDetailHeight * 4; i += 4) {
 		// convert values to float between 0 and 1.
 		// store height value as a floating point value between 0 and 1.
-		maDetailImages[index][i] = (float)tmpMap[i] / 255.0f;
+		maDetailImages[index][i] = (float)tmpDiffuseMap[i] / 255.0f;
+		maDetailImages[index][i + 1] = (float)tmpDiffuseMap[i + 1] / 255.0f;
+		maDetailImages[index][i + 2] = (float)tmpDiffuseMap[i + 2] / 255.0f;
+		maDetailImages[index][i + 3] = (float)tmpDepthMap[i] / 255.0f;
 	}
 	// we don't need the original data anymore.
-	delete[] tmpMap;
+	delete[] tmpDiffuseMap;
+	delete[] tmpDepthMap;
 }
