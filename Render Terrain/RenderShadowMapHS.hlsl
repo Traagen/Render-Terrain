@@ -1,4 +1,4 @@
-cbuffer ShadowConstants : register(b2)
+cbuffer ShadowConstants : register(b1)
 {
 	float4x4 shadowmatrix;
 	float4 eye;

@@ -1,4 +1,4 @@
-cbuffer PerFrameData : register(b0)
+cbuffer PerFrameData : register(b1)
 {
 	float4x4 viewproj;
 	float4x4 shadowtexmatrices[4];

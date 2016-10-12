@@ -2,50 +2,75 @@
 Graphics.cpp
 
 Author:			Chris Serson
-Last Edited:	August 1, 2016
+Last Edited:	October 12, 2016
 
 Description:	Class for creating and managing a Direct3D 12 instance.
 */
 #include "Graphics.h"
+#include <string>
 
 namespace graphics {
-	Graphics::Graphics(int height, int width, HWND win, bool fullscreen) {
-		mpDev = nullptr;
-		mpCmdQ = nullptr;
-		mpCmdList = nullptr;
-		mpSwapChain = nullptr;
-		mpRTVHeap = nullptr;
-		mFenceEvent = nullptr;
-		mpDSVHeap = nullptr;
-		mpDepthStencilBuffer = nullptr;
-		for (int i = 0; i < FRAME_BUFFER_COUNT; ++i) {
-			maCmdAllocators[i] = nullptr;
-			maBackBuffers[i] = nullptr;
-			maFences[i] = nullptr;
+	/* Definitions for Non-class-specific Functions. */
+	// Compile the specified shader.
+	void CompileShader(LPCWSTR fn, ShaderType st, D3D12_SHADER_BYTECODE& bcShader) {
+		LPCSTR version;
+		switch (st) {
+		case PIXEL_SHADER:
+			version = "ps_5_0";
+			break;
+		case VERTEX_SHADER:
+			version = "vs_5_0";
+			break;
+		case GEOMETRY_SHADER:
+			version = "gs_5_0";
+			break;
+		case HULL_SHADER:
+			version = "hs_5_0";
+			break;
+		case DOMAIN_SHADER:
+			version = "ds_5_0";
+			break;
+		default:
+			version = ""; // will break on attempting to compile as not valid.
 		}
 
-		D3D12_COMMAND_QUEUE_DESC			cmdQDesc = {};
-		D3D12_DESCRIPTOR_HEAP_DESC			rtvHeapDesc = {};
-		D3D12_DESCRIPTOR_HEAP_DESC			dsvHeapDesc = {};
-		IDXGIFactory4*						factory;
-		IDXGIAdapter1*						adapter;
-		IDXGISwapChain*						swapChain;
-		DXGI_SWAP_CHAIN_DESC				swapChainDesc = {};
-		D3D12_DEPTH_STENCIL_VIEW_DESC		dsvDesc = {};
-		D3D12_CLEAR_VALUE					dsOptimizedClearValue = {};
-		int									adapterIndex;
-		bool								adapterFound;
+		ID3DBlob* shader;
+		ID3DBlob* err;
+		if (FAILED(D3DCompileFromFile(fn, NULL, NULL, "main", version, D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION, 0, &shader, &err))) {
+			if (shader) shader->Release();
+			if (err) {
+				std::string msg((char *)err->GetBufferPointer());
+				msg = "graphics::CompileShader: " + msg;
+				throw GFX_Exception(msg.c_str());
+			}
+			else {
+				std::string msg(version);
+				msg = "graphics::CompileShader: Failed to compile shader version " + msg + ". No error returned from compiler";
+				throw GFX_Exception(msg.c_str());
+			}
+		}
+		bcShader.BytecodeLength = shader->GetBufferSize();
+		bcShader.pShaderBytecode = shader->GetBufferPointer();
+	}
 
+	/* Definitions for Device Class */
+	Device::Device(HWND win, unsigned int h, unsigned int w, bool fullscreen, unsigned int numFrames) : 
+		m_hScreen(h), m_wScreen(w), m_isWindowed(!fullscreen), m_numFrames(numFrames) {
+		m_pDev = nullptr;
+		m_pCmdQ = nullptr;
+		m_pSwapChain = nullptr;
+		
 		// Create a DirectX graphics interface factory.
+		IDXGIFactory4* factory;
 		if (FAILED(CreateDXGIFactory2(FACTORY_DEBUG, IID_PPV_ARGS(&factory))))
 		{
-			throw GFX_Exception("CreateDXGIFactory2 failed on init.");
+			throw GFX_Exception("In Device::Device: CreateDXGIFactory2 failed.");
 		}
 
 		// Search for a DirectX 12 compatible Hardware device (ie graphics card). Minimum feature level = 11.0
-		adapterIndex = 0;
-		adapterFound = false;
-
+		int				adapterIndex = 0;
+		bool			adapterFound = false;
+		IDXGIAdapter1*	adapter;
 		while (factory->EnumAdapters1(adapterIndex, &adapter) != DXGI_ERROR_NOT_FOUND) {
 			DXGI_ADAPTER_DESC1 desc;
 			adapter->GetDesc1(&desc);
@@ -64,44 +89,46 @@ namespace graphics {
 			++adapterIndex;
 		}
 		if (!adapterFound) {
-			throw GFX_Exception("No DirectX 12 compatible graphics card found on init.");
+			throw GFX_Exception("In Device::Device: No DirectX 12 compatible graphics card found on init.");
 		}
 
 		// attempt to create the device.
-		if (FAILED(D3D12CreateDevice(adapter, FEATURE_LEVEL, IID_PPV_ARGS(&mpDev)))) {
-			throw GFX_Exception("D3D12CreateDevice failed on init.");
+		if (FAILED(D3D12CreateDevice(adapter, FEATURE_LEVEL, IID_PPV_ARGS(&m_pDev)))) {
+			throw GFX_Exception("In Device::Device: D3D12CreateDevice failed on init.");
 		}
 
 		// attempt to create the command queue.
-		cmdQDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
-		cmdQDesc.Priority = D3D12_COMMAND_QUEUE_PRIORITY_NORMAL;
-		cmdQDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
-		cmdQDesc.NodeMask = 0;
+		D3D12_COMMAND_QUEUE_DESC descCmdQ = {};
+		descCmdQ.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
+		descCmdQ.Priority = D3D12_COMMAND_QUEUE_PRIORITY_NORMAL;
+		descCmdQ.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
+		descCmdQ.NodeMask = 0;
 
-		if (FAILED(mpDev->CreateCommandQueue(&cmdQDesc, IID_PPV_ARGS(&mpCmdQ)))) {
-			throw GFX_Exception("CreateCommandQueue failed on init.");
+		if (FAILED(m_pDev->CreateCommandQueue(&descCmdQ, IID_PPV_ARGS(&m_pCmdQ)))) {
+			throw GFX_Exception("In Device::Device: CreateCommandQueue failed on init.");
 		}
 
 		// attempt to create the swap chain.
-		DXGI_SAMPLE_DESC sampleDesc = {};
-		sampleDesc.Count = 1; // turns multi-sampling off. Not supported feature for my card.
-
-		swapChainDesc.BufferCount = FRAME_BUFFER_COUNT; // double buffering.
-		swapChainDesc.BufferDesc.Height = height;
-		swapChainDesc.BufferDesc.Width = width;
-		swapChainDesc.BufferDesc.Format = DESIRED_FORMAT;
-		swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT; // this says the pipeline will render to this swap chain
-		swapChainDesc.OutputWindow = win;
-		swapChainDesc.Windowed = !fullscreen;
-		swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-		swapChainDesc.SampleDesc = sampleDesc;
+		DXGI_SAMPLE_DESC descSample = {};
+		descSample.Count = 1; // turns multi-sampling off. Not supported feature for my card.
+		DXGI_SWAP_CHAIN_DESC descSwapChain = {};
+		descSwapChain.BufferCount = m_numFrames;
+		descSwapChain.BufferDesc.Height = m_hScreen;
+		descSwapChain.BufferDesc.Width = m_wScreen;
+		descSwapChain.BufferDesc.Format = DESIRED_FORMAT;
+		descSwapChain.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT; // this says the pipeline will render to this swap chain
+		descSwapChain.OutputWindow = win;
+		descSwapChain.Windowed = m_isWindowed;
+		descSwapChain.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+		descSwapChain.SampleDesc = descSample;
 
 		// create temporary swapchain.
-		if (FAILED(factory->CreateSwapChain(mpCmdQ, &swapChainDesc, &swapChain))) {
-			throw GFX_Exception("CreateSwapChain failed on init.");
+		IDXGISwapChain* swapChain;
+		if (FAILED(factory->CreateSwapChain(m_pCmdQ, &descSwapChain, &swapChain))) {
+			throw GFX_Exception("In Device::Device: CreateSwapChain failed on init.");
 		}
 		// upgrade swapchain to swapchain3 and store in mpSwapChain.
-		mpSwapChain = static_cast<IDXGISwapChain3*>(swapChain);
+		m_pSwapChain = static_cast<IDXGISwapChain3*>(swapChain);
 
 		// clean up.
 		swapChain = NULL;
@@ -109,383 +136,157 @@ namespace graphics {
 			factory->Release();
 			factory = NULL;
 		}
+	}
 
-		// get the index for the current back buffer.
-		mBufferIndex = mpSwapChain->GetCurrentBackBufferIndex();
-
-		// create the render target views for the back buffers.
-		rtvHeapDesc.NumDescriptors = FRAME_BUFFER_COUNT;
-		rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-		rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-
-		if (FAILED(mpDev->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&mpRTVHeap)))) {
-			throw GFX_Exception("CreateDescriptorHeap failed on init.");
+	Device::~Device() {
+		if (m_pSwapChain) {
+			m_pSwapChain->SetFullscreenState(false, NULL); // ensure swap chain in windowed mode before releasing.
+			m_pSwapChain->Release();
+			m_pSwapChain = nullptr;
 		}
 
-		// record the size of the RTV descriptor heap.
-		mRTVDescSize = mpDev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
-
-		// get a handle to the first descriptor in the descriptor heap. a handle is basically a pointer,
-		// but we cannot literally use it like a c++ pointer.
-		CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(mpRTVHeap->GetCPUDescriptorHandleForHeapStart());
-
-		for (int i = 0; i < FRAME_BUFFER_COUNT; ++i) {
-			// Get a pointer to the first back buffer from the swap chain.
-			if (FAILED(mpSwapChain->GetBuffer(i, IID_PPV_ARGS(&maBackBuffers[i])))) {
-				throw GFX_Exception("Swap Chain GetBuffer failed on init.");
-			}
-			mpDev->CreateRenderTargetView(maBackBuffers[i], NULL, rtvHandle);
-
-			// move to the next back buffer and repeat.
-			rtvHandle.Offset(1, mRTVDescSize);
+		if (m_pCmdQ) {
+			m_pCmdQ->Release();
+			m_pCmdQ = nullptr;
 		}
-
-		// Create the depth/stencil buffer
-		// create a descriptor heap for the DSB.
-		dsvHeapDesc.NumDescriptors = 1;
-		dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
-		dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-		if (FAILED(mpDev->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(&mpDSVHeap)))) {
-			throw GFX_Exception("Create descriptor heap failed for Depth/Stencil.");
-		}
-		
-		// create optimized clear value and default heap for DSB.
-		dsOptimizedClearValue.Format = DXGI_FORMAT_D32_FLOAT;
-		dsOptimizedClearValue.DepthStencil.Depth = 1.0f;
-		dsOptimizedClearValue.DepthStencil.Stencil = 0;
-
-		if (FAILED(mpDev->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT), D3D12_HEAP_FLAG_NONE,
-												  &CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_D32_FLOAT, width, height, 1, 0, 
-													  1, 0, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL), 
-												  D3D12_RESOURCE_STATE_DEPTH_WRITE, &dsOptimizedClearValue, 
-												  IID_PPV_ARGS(&mpDepthStencilBuffer)))) {
-			throw GFX_Exception("Failed to create heap for Depth/Stencil buffer.");
-		}
-		mpDepthStencilBuffer->SetName(L"Depth/Stencil Resource Heap");
-
-		// create the depth/stencil view
-		dsvDesc.Format = DXGI_FORMAT_D32_FLOAT;
-		dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
-		dsvDesc.Flags = D3D12_DSV_FLAG_NONE;
-
-		mpDev->CreateDepthStencilView(mpDepthStencilBuffer, &dsvDesc, mpDSVHeap->GetCPUDescriptorHandleForHeapStart());
-		
-		// Create CommandAllocator and Fence for each Frame Buffer.
-		for (int i = 0; i < FRAME_BUFFER_COUNT; ++i) {
-			// attempt to create a command allocator.
-			if (FAILED(mpDev->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&maCmdAllocators[i])))) {
-				throw GFX_Exception("CreateCommandAllocator failed on init.");
-			}
-
-			// Create a fence to deal with GPU synchronization.
-			if (FAILED(mpDev->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&maFences[i])))) {
-				throw GFX_Exception("CreateFence failed on init.");
-			}
-
-			maFenceValues[i] = 0;
-		}
-
-		// create a command list.
-		if (FAILED(mpDev->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, maCmdAllocators[mBufferIndex], NULL, IID_PPV_ARGS(&mpCmdList)))) {
-			throw GFX_Exception("CreateCommandList failed on init.");
-		}
-
-		mFenceEvent = CreateEvent(NULL, false, false, NULL);
-		if (!mFenceEvent) {
-			throw GFX_Exception("Create Fence Event failed on init.");
+		if (m_pDev) {
+			m_pDev->Release();
+			m_pDev = nullptr;
 		}
 	}
 
-	Graphics::~Graphics() {
-		// ensure swap chain in windows mode.
-		if (mpSwapChain) {
-			mpSwapChain->SetFullscreenState(false, NULL);
-			mpSwapChain->Release();
-			mpSwapChain = nullptr;
-		}
+	// Return the heap descriptor size for the specified heap type.
+	unsigned int Device::GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE ht) {
+		return m_pDev->GetDescriptorHandleIncrementSize(ht);
+	}
 
-		CloseHandle(mFenceEvent);
-
-		if (mpCmdList) {
-			mpCmdList->Release();
-			mpCmdList = nullptr;
-		}
-
-		if (mpDepthStencilBuffer) {
-			mpDepthStencilBuffer->Release();
-			mpDepthStencilBuffer = nullptr;
-		}
-
-		if (mpDSVHeap) {
-			mpDSVHeap->Release();
-			mpDSVHeap = nullptr;
-		}
-
-		for (int i = 0; i < FRAME_BUFFER_COUNT; ++i) {
-			if (maFences[i]) {
-				maFences[i]->Release();
-				maFences[i] = nullptr;
-			}
-
-			if (maCmdAllocators[i]) {
-				maCmdAllocators[i]->Release();
-				maCmdAllocators[i] = nullptr;
-			}
-
-			if (maBackBuffers[i]) {
-				maBackBuffers[i]->Release();
-				maBackBuffers[i] = nullptr;
-			}
-		}
-		if (mpRTVHeap) {
-			mpRTVHeap->Release();
-			mpRTVHeap = nullptr;
-		}
-		if (mpCmdQ) {
-			mpCmdQ->Release();
-			mpCmdQ = nullptr;
-		}
-		if (mpDev) {
-			mpDev->Release();
-			mpDev = nullptr;
+	// Create and return a pointer to a Command Allocator
+	void Device::CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE clt, ID3D12CommandAllocator*& allocator) {
+		// attempt to create a command allocator.
+		if (FAILED(m_pDev->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&allocator)))) {
+			throw GFX_Exception("Device::CreateCommandAllocator failed.");
 		}
 	}
 
-	UINT Graphics::GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE ht) {
-		return mpDev->GetDescriptorHandleIncrementSize(ht);
+	// Return a pointer to the specified back buffer
+	void Device::GetBackBuffer(unsigned int i, ID3D12Resource*& buffer) {
+		if (i >= m_numFrames || i < 0) {
+			throw GFX_Exception("Invalid buffer index provided to Device::GetBackBuffer.");
+		}
+
+		if (FAILED(m_pSwapChain->GetBuffer(i, IID_PPV_ARGS(&buffer)))) {
+			throw GFX_Exception("Swap Chain GetBuffer failed in Device::GetBackBuffer.");
+		}
 	}
 
-	// Create and pass back a pointer to a new root signature matching the provided description.
-	void Graphics::CreateRootSig(CD3DX12_ROOT_SIGNATURE_DESC* rootDesc, ID3D12RootSignature*& rootSig) {
-		ID3DBlob*	err;
-		ID3DBlob*	sig;
+	// Return the index of the initial back buffer
+	unsigned int Device::GetCurrentBackBuffer() {
+		return m_pSwapChain->GetCurrentBackBufferIndex();
+	}
 
-		if (FAILED(D3D12SerializeRootSignature(rootDesc, D3D_ROOT_SIGNATURE_VERSION_1, &sig, &err))) {
-			throw GFX_Exception((char *)err->GetBufferPointer());
+	// Create and return a pointer to a new root signature matching the provided description.
+	void Device::CreateRootSig(CD3DX12_ROOT_SIGNATURE_DESC* desc, ID3D12RootSignature*& root) {
+		ID3DBlob* err;
+		ID3DBlob* sig;
+
+		if (FAILED(D3D12SerializeRootSignature(desc, D3D_ROOT_SIGNATURE_VERSION_1, &sig, &err))) {
+			std::string msg((char *)err->GetBufferPointer());
+			msg = "In Device::CreateRootSig: " + msg;
+			throw GFX_Exception(msg.c_str());
 		}
-		if (FAILED(mpDev->CreateRootSignature(0, sig->GetBufferPointer(), sig->GetBufferSize(), IID_PPV_ARGS(&rootSig)))) {
-			throw GFX_Exception("Failed to create Root Signature.");
+		if (FAILED(m_pDev->CreateRootSignature(0, sig->GetBufferPointer(), sig->GetBufferSize(), IID_PPV_ARGS(&root)))) {
+			throw GFX_Exception("Device::CreateRootSig failed.");
 		}
 		sig->Release();
 	}
 
-	// Create and pass back a pointer to a new Pipeline State Object matching the provided description.
-	void Graphics::CreatePSO(D3D12_GRAPHICS_PIPELINE_STATE_DESC* psoDesc, ID3D12PipelineState*& PSO) {
-		if (FAILED(mpDev->CreateGraphicsPipelineState(psoDesc, IID_PPV_ARGS(&PSO)))) {
-			throw GFX_Exception("Failed to CreateGraphicsPipeline.");
+	// Create and return a pointer to a new Pipeline State Object matching the provided description.
+	void Device::CreatePSO(D3D12_GRAPHICS_PIPELINE_STATE_DESC* desc, ID3D12PipelineState*& pso) {
+		if (FAILED(m_pDev->CreateGraphicsPipelineState(desc, IID_PPV_ARGS(&pso)))) {
+			throw GFX_Exception("Device::CreateGraphicsPipeline failed.");
 		}
 	}
 
 	// Create and return a pointer to a Descriptor Heap.
-	void Graphics::CreateDescriptorHeap(D3D12_DESCRIPTOR_HEAP_DESC* heapDesc, ID3D12DescriptorHeap*& heap) {
-		if FAILED(mpDev->CreateDescriptorHeap(heapDesc, IID_PPV_ARGS(&heap))) {
-			throw GFX_Exception("Failed to create descriptor heap.");
+	void Device::CreateDescriptorHeap(D3D12_DESCRIPTOR_HEAP_DESC* desc, ID3D12DescriptorHeap*& heap) {
+		if FAILED(m_pDev->CreateDescriptorHeap(desc, IID_PPV_ARGS(&heap))) {
+			throw GFX_Exception("Device::CreateDescriptorHeap failed.");
 		}
 	}
 
 	// Create a Shader Resource view for the supplied resource.
-	void Graphics::CreateSRV(ID3D12Resource*& tex, D3D12_SHADER_RESOURCE_VIEW_DESC* srvDesc, D3D12_CPU_DESCRIPTOR_HANDLE handle) {
-		mpDev->CreateShaderResourceView(tex, srvDesc, handle);
+	void Device::CreateSRV(ID3D12Resource*& tex, D3D12_SHADER_RESOURCE_VIEW_DESC* desc, D3D12_CPU_DESCRIPTOR_HANDLE handle) {
+		m_pDev->CreateShaderResourceView(tex, desc, handle);
 	}
 
 	// Create a constant buffer view
-	void Graphics::CreateCBV(D3D12_CONSTANT_BUFFER_VIEW_DESC* desc, D3D12_CPU_DESCRIPTOR_HANDLE handle) {
-		mpDev->CreateConstantBufferView(desc, handle);
+	void Device::CreateCBV(D3D12_CONSTANT_BUFFER_VIEW_DESC* desc, D3D12_CPU_DESCRIPTOR_HANDLE handle) {
+		m_pDev->CreateConstantBufferView(desc, handle);
 	}
 
 	// Create a depth/stencil buffer view
-	void Graphics::CreateDSV(ID3D12Resource*& tex, D3D12_DEPTH_STENCIL_VIEW_DESC* desc, D3D12_CPU_DESCRIPTOR_HANDLE handle) {
-		mpDev->CreateDepthStencilView(tex, desc, handle);
+	void Device::CreateDSV(ID3D12Resource*& tex, D3D12_DEPTH_STENCIL_VIEW_DESC* desc, D3D12_CPU_DESCRIPTOR_HANDLE handle) {
+		m_pDev->CreateDepthStencilView(tex, desc, handle);
 	}
 
-	// Create an upload buffer, ready for mapping.
-	void Graphics::CreateUploadBuffer(ID3D12Resource*& buffer, D3D12_RESOURCE_DESC* texDesc) {
-		if (FAILED(mpDev->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD), D3D12_HEAP_FLAG_NONE,
-			texDesc,
-			D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&buffer)))) {
-			throw GFX_Exception("Failed to create buffer.");
+	// Create a render target view
+	void Device::CreateRTV(ID3D12Resource*& tex, D3D12_RENDER_TARGET_VIEW_DESC* desc, D3D12_CPU_DESCRIPTOR_HANDLE handle) {
+		m_pDev->CreateRenderTargetView(tex, desc, handle);
+	}
+
+	// Create a sampler
+	void Device::CreateSampler(D3D12_SAMPLER_DESC* desc, D3D12_CPU_DESCRIPTOR_HANDLE handle) {
+		m_pDev->CreateSampler(desc, handle);
+	}
+
+	// Create a fence
+	void Device::CreateFence(unsigned long long valInit, D3D12_FENCE_FLAGS flags, ID3D12Fence*& fence) {
+		if (FAILED(m_pDev->CreateFence(valInit, flags, IID_PPV_ARGS(&fence)))) {
+			throw GFX_Exception("Device::CreateFence failed on init.");
 		}
 	}
 
-	// Create a default buffer, preconfigured as a copy destination
-	void Graphics::CreateDefaultBuffer(ID3D12Resource*& buffer, D3D12_RESOURCE_DESC* texDesc) {
-		// Create the resource heap on the gpu.
-		if (FAILED(mpDev->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT), D3D12_HEAP_FLAG_NONE, texDesc,
-			D3D12_RESOURCE_STATE_COPY_DEST, NULL, IID_PPV_ARGS(&buffer)))) {
-			throw GFX_Exception("Failed to create default heap on CreateSRV.");
+	// Create a Command List
+	void Device::CreateGraphicsCommandList(D3D12_COMMAND_LIST_TYPE type, ID3D12CommandAllocator* alloc, ID3D12GraphicsCommandList*& list, unsigned int mask, 
+		ID3D12PipelineState* psoInit) {
+		// create a command list.
+		if (FAILED(m_pDev->CreateCommandList(mask, type, alloc, psoInit, IID_PPV_ARGS(&list)))) {
+			throw GFX_Exception("Device::CreateCommandList failed.");
 		}
 	}
 
-	// Create a commited resource. More general version of CreateUploadBuffer and CreateDefaultBuffer. Still needs work/testing.
-	void Graphics::CreateCommittedResource(ID3D12Resource*& heap, D3D12_RESOURCE_DESC* descTex,
-		D3D12_HEAP_PROPERTIES* propHeap, D3D12_HEAP_FLAGS flags, D3D12_RESOURCE_STATES state, D3D12_CLEAR_VALUE* clear) {
-		if (FAILED(mpDev->CreateCommittedResource(propHeap, flags, descTex, state, clear, IID_PPV_ARGS(&heap)))) {
-			throw GFX_Exception("Failed to create committed resource.");
-		}
-	}
-
-	// set the back buffer as the render target for the provided command list.
-	void Graphics::SetBackBufferRender(ID3D12GraphicsCommandList* cmdList, const float clearColor[4]) {
-		// set back buffer to render target.
-		cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(maBackBuffers[mBufferIndex], D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET));
-
-		// get the handle to the back buffer and set as render target.
-		CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(mpRTVHeap->GetCPUDescriptorHandleForHeapStart(), mBufferIndex, mRTVDescSize);
-		CD3DX12_CPU_DESCRIPTOR_HANDLE dsvHandle(mpDSVHeap->GetCPUDescriptorHandleForHeapStart());
-		cmdList->OMSetRenderTargets(1, &rtvHandle, false, &dsvHandle);
-	
-		cmdList->ClearRenderTargetView(rtvHandle, clearColor, 0, NULL);
-		cmdList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
-	}
-
-	// set the back buffer as presenting for the provided command list.
-	void Graphics::SetBackBufferPresent(ID3D12GraphicsCommandList* cmdList) {
-		// switch back buffer to present state.
-		cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(maBackBuffers[mBufferIndex], D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT));
-	}
-
-	void Graphics::ResetPipeline() {
-		NextFrame();
-
-		// reset command allocator and command list memory.
-		if (FAILED(maCmdAllocators[mBufferIndex]->Reset())) {
-			throw GFX_Exception("CommandAllocator Reset failed on UpdatePipeline.");
-		}
-		if (FAILED(mpCmdList->Reset(maCmdAllocators[mBufferIndex], NULL))) {
-			throw GFX_Exception("CommandList Reset failed on UpdatePipeline.");
-		}
-	}
-
-	void Graphics::LoadAssets() {
-		// load the command list.
-		ID3D12CommandList* lCmds[] = { mpCmdList };
-
-		// execute
-		mpCmdQ->ExecuteCommandLists(__crt_countof(lCmds), lCmds);
-
-		++maFenceValues[mBufferIndex];
-
-		// Add Signal command to set fence to the fence value that indicates the GPU is done with that buffer. maFenceValues[i] contains the frame count for that buffer.
-		if (FAILED(mpCmdQ->Signal(maFences[mBufferIndex], maFenceValues[mBufferIndex]))) {
-			throw GFX_Exception("CommandQueue Signal Fence failed on Render.");
-		}
-
-		// if the current value returned by the fence is less than the current fence value for this buffer, then we know the GPU is not done with the buffer, so wait.
-		if (FAILED(maFences[mBufferIndex]->SetEventOnCompletion(maFenceValues[mBufferIndex], mFenceEvent))) {
-			throw GFX_Exception("Failed to SetEventOnCompletion for fence in WaitForGPU.");
-		}
-
-		WaitForSingleObject(mFenceEvent, INFINITE);
-		
-		++maFenceValues[mBufferIndex];
-	}
-
-	void Graphics::NextFrame() {
-		// Add Signal command to set fence to the fence value that indicates the GPU is done with that buffer. maFenceValues[i] contains the frame count for that buffer.
-		if (FAILED(mpCmdQ->Signal(maFences[mBufferIndex], maFenceValues[mBufferIndex]))) {
-			throw GFX_Exception("CommandQueue Signal Fence failed on Render.");
-		}
-
-		// set the buffer index to point to the current back buffer.
-		mBufferIndex = mpSwapChain->GetCurrentBackBufferIndex();
-
-		// if the current value returned by the fence is less than the current fence value for this buffer, then we know the GPU is not done with the buffer, so wait.
-		if (maFences[mBufferIndex]->GetCompletedValue() < maFenceValues[mBufferIndex]) {
-			if (FAILED(maFences[mBufferIndex]->SetEventOnCompletion(maFenceValues[mBufferIndex], mFenceEvent))) {
-				throw GFX_Exception("Failed to SetEventOnCompletion for fence in NextFrame.");
-			}
-
-			WaitForSingleObject(mFenceEvent, INFINITE);
-		}
-
-		++maFenceValues[mBufferIndex];
-	}
-
-	// Function to be called before shutting down. Ensures GPU is done rendering all frames so we can release graphics resources.
-	void Graphics::ClearAllFrames() {
-		for (int i = 0; i < FRAME_BUFFER_COUNT; ++i) {
-			// Add Signal command to set fence to the fence value that indicates the GPU is done with that buffer. maFenceValues[i] contains the frame count for that buffer.
-			if (FAILED(mpCmdQ->Signal(maFences[i], maFenceValues[i]))) {
-				throw GFX_Exception("CommandQueue Signal Fence failed on Render.");
-			}
-
-			// if the current value returned by the fence is less than the current fence value for this buffer, then we know the GPU is not done with the buffer, so wait.
-			if (maFences[i]->GetCompletedValue() < maFenceValues[i]) {
-				if (FAILED(maFences[i]->SetEventOnCompletion(maFenceValues[i], mFenceEvent))) {
-					throw GFX_Exception("Failed to SetEventOnCompletion for fence in NextFrame.");
-				}
-
-				WaitForSingleObject(mFenceEvent, INFINITE);
-			}
-		}
-	}
-
-	void Graphics::Run() {
-		// load the command list.
-		ID3D12CommandList* lCmds[] = { mpCmdList };
-
-		// execute
-		mpCmdQ->ExecuteCommandLists(__crt_countof(lCmds), lCmds);
-
-		if (FAILED(mpCmdList->Reset(maCmdAllocators[mBufferIndex], NULL))) {
-			throw GFX_Exception("CommandList Reset failed on UpdatePipeline.");
-		}
-	}
-
-	void Graphics::Render() {
-		// load the command list.
-		ID3D12CommandList* lCmds[] = { mpCmdList };
-		
-		// execute
-		mpCmdQ->ExecuteCommandLists(__crt_countof(lCmds), lCmds);
-
-		// swap the back buffers.
-	/*	if (FAILED(mpSwapChain->Present(0, 0))) {
-			throw GFX_Exception("SwapChain Present failed on Render.");
+	// Create a commited resource. 
+	void Device::CreateCommittedResource(ID3D12Resource*& heap, D3D12_RESOURCE_DESC* desc,
+		D3D12_HEAP_PROPERTIES* props, D3D12_HEAP_FLAGS flags, D3D12_RESOURCE_STATES state, D3D12_CLEAR_VALUE* clear) {
+		/*if (FAILED(m_pDev->CreateCommittedResource(props, flags, desc, state, clear, IID_PPV_ARGS(&heap)))) {
+			throw GFX_Exception("Device::CreateCommittedResource failed.");
 		}*/
-		HRESULT hr = mpSwapChain->Present(0, 0);
+		HRESULT hr = m_pDev->CreateCommittedResource(props, flags, desc, state, clear, IID_PPV_ARGS(&heap));
 		if (FAILED(hr)) {
-			hr = mpDev->GetDeviceRemovedReason();
-			throw GFX_Exception("swapchain present failed");
+			hr = m_pDev->GetDeviceRemovedReason();
+			throw GFX_Exception("Device::CreateCommittedResource failed.");
+		}
+	}
+		
+	// Signal Command Queue with provided fence value.
+	void Device::SetFence(ID3D12Fence* fence, unsigned long long val) {
+		// Add Signal command to set fence to the fence value that indicates the GPU is done with that buffer. 
+		if (FAILED(m_pCmdQ->Signal(fence, val))) {
+			throw GFX_Exception("Device::SetFence failed.");
 		}
 	}
 
-	// Compile the specified shader.
-	void Graphics::CompileShader(LPCWSTR filename, D3D12_SHADER_BYTECODE& shaderBytecode, ShaderType st) {
-		ID3DBlob*	shader;
-		ID3DBlob*	err;
-		LPCSTR		version;
+	// Run the submitted array of commands
+	void Device::ExecuteCommandLists(ID3D12CommandList* lCmds[], unsigned int numCommands) {
+		// execute
+		m_pCmdQ->ExecuteCommandLists(numCommands, lCmds);
+	}
 
-		switch (st) {
-			case PIXEL_SHADER:
-				version = "ps_5_0";
-				break;
-			case VERTEX_SHADER:
-				version = "vs_5_0";
-				break;
-			case GEOMETRY_SHADER:
-				version = "gs_5_0";
-				break;
-			case HULL_SHADER:
-				version = "hs_5_0";
-					break;
-			case DOMAIN_SHADER:
-				version = "ds_5_0";
-				break;
-			default:
-				version = ""; // will break on attempting to compile as not valid.
+	// Present the latest back buffer on the swap chain.
+	void Device::Present() {
+		// swap the back buffers.
+		if (FAILED(m_pSwapChain->Present(0, 0))) {
+			throw GFX_Exception("Device::Present SwapChain failed to present.");
 		}
-
-		if (FAILED(D3DCompileFromFile(filename, NULL, NULL, "main", version, D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION, 0, &shader, &err))) {
-			if (shader) shader->Release();
-			if (err) {
-				throw GFX_Exception((char *)err->GetBufferPointer());
-			}
-			else {
-				throw GFX_Exception("Failed to compile Pixel Shader. No error returned from compiler.");
-			}
-		}
-		shaderBytecode.BytecodeLength = shader->GetBufferSize();
-		shaderBytecode.pShaderBytecode = shader->GetBufferPointer();
 	}
 }

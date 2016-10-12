@@ -2,24 +2,30 @@
 Terrain.h
 
 Author:			Chris Serson
-Last Edited:	September 23, 2016
+Last Edited:	October 12, 2016
 
-Description:	Class for loading a heightmap and rendering as a terrain.
+Description:	Class for loading height map and displacement map data
+				with which to render terrain. Also contains a reference
+				to a TerrainMaterial object containing diffuse and
+				normal maps to texture the terrain with.
 
-Usage:			- Calling the constructor, either through Terrain T(...);
-				or Terrain* T; T = new Terrain(...);, will load the
-				heightmap texture and shaders needed to render the terrain.
-				- Proper shutdown is handled by the destructor.
+Usage:			- Proper shutdown is handled by the destructor.
 				- Is hard-coded for Direct3D 12.
+				- Call AttachTerrainResources() to load the appropriate 
+					buffer/resource views to render the terrain.
+				- Call AttachMaterialResources() to load the material
+					SRVs in order to texture the terrain.
 				- Call Draw() and pass a Command List to load the set of
 				commands necessary to render the terrain.
 
 Future Work:	- Add a colour palette.
-				- Add support for texturing.
+				- Add bounding sphere code.
+				- Change to dynamic mesh, ie geometry clipmapping or similar.
 */
 #pragma once
 
 #include "Graphics.h"
+#include "Material.h"
 #include <vector>
 
 using namespace graphics;
@@ -31,75 +37,72 @@ struct Vertex {
 	UINT skirt;
 };
 
+struct TerrainShaderConstants {
+	float scale;
+	float width;
+	float depth;
+	float base;
+
+	TerrainShaderConstants(float s, float w, float d, float b) : scale(s), width(w), depth(d), base(b) {}
+};
+
 class Terrain {
 public:
-	Terrain();
+	Terrain(ResourceManager* rm, TerrainMaterial* mat, const char* fnHeightmap, const char* fnDisplacementMap);
 	~Terrain();
 
 	void Draw(ID3D12GraphicsCommandList* cmdList, bool Draw3D = true);
+	// Attach the resources needed for rendering terrain.
+	// Requires the indices into the root descriptor table to attach the heightmap and displacement map SRVs and constant buffer CBV to.
+	void AttachTerrainResources(ID3D12GraphicsCommandList* cmdList, unsigned int srvDescTableIndexHeightMap,
+		unsigned int srvDescTableIndexDisplacementMap, unsigned int cbvDescTableIndex);
+	// Attach the material resources. Requires root descriptor table index.
+	void AttachMaterialResources(ID3D12GraphicsCommandList* cmdList, unsigned int srvDescTableIndex);
 
-	UINT GetSizeOfVertexBuffer() { return mVertexCount * sizeof(Vertex); }
-	UINT GetSizeOfIndexBuffer() { return mIndexCount * sizeof(UINT); }
-	UINT GetSizeOfHeightMap() { return mWidth * mDepth * sizeof(float); }
-	UINT GetSizeOfDisplacementMap() { return mDispWidth * mDispDepth * 4 * sizeof(float); }
-	UINT GetSizeOfDetailMap() { return sizeof(float) * 4 * mDetailHeight * mDetailWidth; }
 	UINT GetHeightMapWidth() { return mWidth; }
 	UINT GetHeightMapDepth() { return mDepth; }
-	UINT GetDisplacementMapWidth() { return mDispWidth; }
-	UINT GetDisplacementMapDepth() { return mDispDepth; }
-	UINT GetDetailMapWidth() { return mDetailWidth; }
-	UINT GetDetailMapHeight() { return mDetailHeight; }
-	int GetBaseHeight() { return mBaseHeight; }
-	float* GetHeightMapTextureData() { return maImage; }
-	float* GetDisplacementMapTextureData() { return maDispImage; }
-	float* GetDetailMapTextureData(int index) { return maDetailImages[index]; }
-	Vertex* GetVertexArray() { return maVertices; }
-	UINT* GetIndexArray() { return maIndices; }
-	float GetScale() { return mHeightScale; }
 	
-	void SetVertexBufferView(D3D12_VERTEX_BUFFER_VIEW vbv) { mVBV = vbv; }
-	void SetIndexBufferView(D3D12_INDEX_BUFFER_VIEW ibv) { mIBV = ibv; }
-	void SetHeightmapResource(ID3D12Resource* tex) { mpHeightmap = tex; }
-	void SetDisplacementMapResource(ID3D12Resource* tex) { mpDisplacementMap = tex; }
-	void SetDetailMapResource(ID3D12Resource* tex) { mpDetailMaps = tex; }
-	void SetVertexBufferResource(ID3D12Resource* vb) { mpVertexBuffer = vb; }
-	void SetIndexBufferResource(ID3D12Resource* ib) { mpIndexBuffer = ib; }
-
 	// Once the GPU has completed uploading buffers to GPU memory, we need to free system memory.
 	void DeleteVertexAndIndexArrays();
 
 private:
 	// Generates an array of vertices and an array of indices.
 	void CreateMesh3D();
+	// Create the vertex buffer view
+	void CreateVertexBuffer();
+	// Create the index buffer view
+	void CreateIndexBuffer();
+	// Create the constant buffer for terrain shader constants
+	void CreateConstantBuffer();
 	// load the specified file containing the heightmap data.
 	void LoadHeightMap(const char* fnHeightMap);
 	// load the specified file containing a displacement map used for smaller geometry detail.
-	void LoadDisplacementMap(const char* fnMap, const char* fnNMap);
-	void LoadDetailDepthMap(int index, const char* fnDiffuse, const char* fnDepth);
+	void LoadDisplacementMap(const char* fnMap);
 	// calculate the minimum and maximum z values for vertices between the provide bounds.
 	XMFLOAT2 CalcZBounds(Vertex topLeft, Vertex bottomRight);
 	
-	ID3D12Resource*				mpHeightmap;
-	ID3D12Resource*				mpDisplacementMap;
-	ID3D12Resource*				mpDetailMaps;
-	ID3D12Resource*				mpVertexBuffer;
-	ID3D12Resource*				mpIndexBuffer;
+	TerrainMaterial*			m_pMat;
+	ResourceManager*			m_pResMgr;
 	D3D12_VERTEX_BUFFER_VIEW	mVBV;
 	D3D12_INDEX_BUFFER_VIEW		mIBV;
-	float*						maImage;
-	float*						maDispImage;
-	float*						maDetailImages[8];
+	D3D12_CPU_DESCRIPTOR_HANDLE m_hdlHeightMapSRV_CPU;
+	D3D12_GPU_DESCRIPTOR_HANDLE m_hdlHeightMapSRV_GPU;
+	D3D12_CPU_DESCRIPTOR_HANDLE m_hdlDisplacementMapSRV_CPU;
+	D3D12_GPU_DESCRIPTOR_HANDLE m_hdlDisplacementMapSRV_GPU;
+	D3D12_CPU_DESCRIPTOR_HANDLE m_hdlConstantsCBV_CPU;
+	D3D12_GPU_DESCRIPTOR_HANDLE m_hdlConstantsCBV_GPU;
+	unsigned char*				maImage;
+	unsigned char*				maDispImage;
 	unsigned int				mWidth;
 	unsigned int				mDepth;
 	unsigned int				mDispWidth;
 	unsigned int				mDispDepth;
-	unsigned int				mDetailWidth;
-	unsigned int				mDetailHeight;
 	int							mBaseHeight;
 	unsigned long				mVertexCount;
 	unsigned long				mIndexCount;
 	float						mHeightScale;
 	Vertex*						maVertices;		// buffer to contain vertex array prior to upload.
 	UINT*						maIndices;		// buffer to contain index array prior to upload.
+	TerrainShaderConstants*		m_pConstants;
 };
 

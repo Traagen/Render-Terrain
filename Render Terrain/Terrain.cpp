@@ -2,77 +2,37 @@
 Terrain.cpp
 
 Author:			Chris Serson
-Last Edited:	September 23, 2016
+Last Edited:	October 12, 2016
 
 Description:	Class for loading a heightmap and rendering as a terrain.
 */
 #include "lodepng.h"
 #include "Terrain.h"
 
-Terrain::Terrain() {
-	mpHeightmap = nullptr;
-	mpDisplacementMap = nullptr;
-	mpVertexBuffer = nullptr;
-	mpIndexBuffer = nullptr;
+Terrain::Terrain(ResourceManager* rm, TerrainMaterial* mat, const char* fnHeightmap, const char* fnDisplacementMap) : 
+	m_pMat(mat), m_pResMgr(rm) {
 	maImage = nullptr;
 	maDispImage = nullptr;
 	maVertices = nullptr;
 	maIndices = nullptr;
-	mpDetailMaps = nullptr;
+	m_pConstants = nullptr;
 
-	for (int i = 0; i < 8; ++i) {
-		maDetailImages[i] = nullptr;
-	}
+	LoadHeightMap(fnHeightmap);
+	LoadDisplacementMap(fnDisplacementMap);
 
-	LoadHeightMap("heightmap6.png");
-	LoadDisplacementMap("displacementmap.png", "displacementmapnormals.png");
-	LoadDetailDepthMap(0, "grassnormalmap.png", "grassdepthmap.png");
-	LoadDetailDepthMap(1, "snownormalmap.png", "snowdepthmap.png");
-	LoadDetailDepthMap(2, "dirtnormalmap.png", "dirtdepthmap.png");
-	LoadDetailDepthMap(3, "rocknormalmap.png", "rockdepthmap.png");
-	LoadDetailDepthMap(4, "grass.png", "grassdepthmap.png");
-	LoadDetailDepthMap(5, "snow.png", "snowdepthmap.png");
-	LoadDetailDepthMap(6, "dirt.png", "dirtdepthmap.png");
-	LoadDetailDepthMap(7, "rock.png", "rockdepthmap.png");
 	CreateMesh3D();
 }
 
 Terrain::~Terrain() {
 	// The order resources are released appears to matter. I haven't tested all possible orders, but at least releasing the heap
 	// and resources after the pso and rootsig was causing my GPU to hang on shutdown. Using the current order resolved that issue.
-	if (mpHeightmap) {
-		mpHeightmap->Release();
-		mpHeightmap = nullptr;
-	}
-
-	if (mpDisplacementMap) {
-		mpDisplacementMap->Release();
-		mpDisplacementMap = nullptr;
-	}
-
-	if (mpIndexBuffer) {
-		mpIndexBuffer->Release();
-		mpIndexBuffer = nullptr;
-	}
-
-	if (mpVertexBuffer) {
-		mpVertexBuffer->Release();
-		mpVertexBuffer = nullptr;
-	}
-
-	if (mpDetailMaps) {
-		mpDetailMaps->Release();
-		mpDetailMaps = nullptr;
-	}
-
-	for (int i = 0; i < 8; ++i) {
-		if (maDetailImages[i]) delete[] maDetailImages[i];
-	}
-
-	if (maImage) delete[] maImage;
-	if (maDispImage) delete[] maDispImage;
+	maImage = nullptr;
+	maDispImage = nullptr;
 
 	DeleteVertexAndIndexArrays();
+
+	m_pResMgr = nullptr;
+	delete m_pMat;
 }
 
 void Terrain::Draw(ID3D12GraphicsCommandList* cmdList, bool Draw3D) {
@@ -100,6 +60,11 @@ void Terrain::DeleteVertexAndIndexArrays() {
 		delete[] maIndices;
 		maIndices = nullptr;
 	}
+
+	if (m_pConstants) {
+		delete m_pConstants;
+		m_pConstants = nullptr;
+	}
 }
 
 // generate vertex and index buffers for 3D mesh of terrain
@@ -119,7 +84,7 @@ void Terrain::CreateMesh3D() {
 	maVertices = new Vertex[arrSize];
 	for (int y = 0; y < scalePatchY; ++y) {
 		for (int x = 0; x < scalePatchX; ++x) {
-			maVertices[y * scalePatchX + x].position = XMFLOAT3((float)x * tessFactor, (float)y * tessFactor, maImage[(y * mWidth + x) * tessFactor] * mHeightScale);
+			maVertices[y * scalePatchX + x].position = XMFLOAT3((float)x * tessFactor, (float)y * tessFactor, ((float)maImage[((y * mWidth + x) * 4) * tessFactor] / 255.0f) * mHeightScale);
 			maVertices[y * scalePatchX + x].skirt = 5;
 		}
 	}
@@ -240,6 +205,87 @@ void Terrain::CreateMesh3D() {
 	maVertices[numVertsInTerrain + scalePatchX - 1].skirt = 0;
 	
 	mIndexCount = arrSize;
+
+	CreateVertexBuffer();
+	CreateIndexBuffer();
+	CreateConstantBuffer();
+}
+
+// Create the vertex buffer view
+void Terrain::CreateVertexBuffer() {
+	// Create the vertex buffer
+	ID3D12Resource* buffer;
+	auto iBuffer = m_pResMgr->NewBuffer(buffer, &CD3DX12_RESOURCE_DESC::Buffer(mVertexCount * sizeof(Vertex)),
+		&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT), D3D12_HEAP_FLAG_NONE,
+		D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, nullptr);
+	buffer->SetName(L"Terrain Vertex Buffer");
+	auto sizeofVertexBuffer = GetRequiredIntermediateSize(buffer, 0, 1);
+
+	// prepare vertex data for upload.
+	D3D12_SUBRESOURCE_DATA dataVB = {};
+	dataVB.pData = maVertices;
+	dataVB.RowPitch = sizeofVertexBuffer;
+	dataVB.SlicePitch = sizeofVertexBuffer;
+
+	m_pResMgr->UploadToBuffer(iBuffer, 1, &dataVB, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+
+	// create and save vertex buffer view to Terrain object.
+	mVBV = {};
+	mVBV.BufferLocation = buffer->GetGPUVirtualAddress();
+	mVBV.StrideInBytes = sizeof(Vertex);
+	mVBV.SizeInBytes = sizeofVertexBuffer;
+}
+
+// Create the index buffer view
+void Terrain::CreateIndexBuffer() {
+	// Create the index buffer
+	ID3D12Resource* buffer;
+	auto iBuffer = m_pResMgr->NewBuffer(buffer, &CD3DX12_RESOURCE_DESC::Buffer(mIndexCount * sizeof(UINT)),
+		&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT), D3D12_HEAP_FLAG_NONE,
+		D3D12_RESOURCE_STATE_INDEX_BUFFER, nullptr);
+	buffer->SetName(L"Terrain Index Buffer");
+	auto sizeofIndexBuffer = GetRequiredIntermediateSize(buffer, 0, 1);
+
+	// prepare index data for upload.
+	D3D12_SUBRESOURCE_DATA dataIB = {};
+	dataIB.pData = maIndices;
+	dataIB.RowPitch = sizeofIndexBuffer;
+	dataIB.SlicePitch = sizeofIndexBuffer;
+
+	m_pResMgr->UploadToBuffer(iBuffer, 1, &dataIB, D3D12_RESOURCE_STATE_INDEX_BUFFER);
+
+	// create and save index buffer view to Terrain object.
+	mIBV = {};
+	mIBV.BufferLocation = buffer->GetGPUVirtualAddress();
+	mIBV.Format = DXGI_FORMAT_R32_UINT;
+	mIBV.SizeInBytes = sizeofIndexBuffer;
+}
+
+// Create the constant buffer for terrain shader constants
+void Terrain::CreateConstantBuffer() {
+	// Create the constant buffer
+	ID3D12Resource* buffer;
+	auto iBuffer = m_pResMgr->NewBuffer(buffer, &CD3DX12_RESOURCE_DESC::Buffer(sizeof(TerrainShaderConstants)),
+		&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT), D3D12_HEAP_FLAG_NONE,
+		D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, nullptr);
+	buffer->SetName(L"Terrain Shader Constants Buffer");
+	auto sizeofBuffer = GetRequiredIntermediateSize(buffer, 0, 1);
+
+	// prepare constant buffer data for upload.
+	m_pConstants = new TerrainShaderConstants(mHeightScale, (float)mWidth, (float)mDepth, (float)mBaseHeight);
+	D3D12_SUBRESOURCE_DATA dataCB = {};
+	dataCB.pData = m_pConstants;
+	dataCB.RowPitch = sizeofBuffer;
+	dataCB.SlicePitch = sizeofBuffer;
+
+	m_pResMgr->UploadToBuffer(iBuffer, 1, &dataCB, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+
+	// Create a constant buffer view.
+	D3D12_CONSTANT_BUFFER_VIEW_DESC descCBV = {};
+	descCBV.BufferLocation = buffer->GetGPUVirtualAddress();
+	descCBV.SizeInBytes = (sizeof(TerrainShaderConstants) + 255) & ~255; // CB size is required to be 256-byte aligned.
+
+	m_pResMgr->AddCBV(&descCBV, m_hdlConstantsCBV_CPU, m_hdlConstantsCBV_GPU);
 }
 
 // calculate the minimum and maximum z values for vertices between the provided bounds.
@@ -253,7 +299,7 @@ XMFLOAT2 Terrain::CalcZBounds(Vertex bottomLeft, Vertex topRight) {
 
 	for (int y = bottomLeftY; y <= topRightY; ++y) {
 		for (int x = bottomLeftX; x <= topRightX; ++x) {
-			float z = maImage[x + y * mWidth] * mHeightScale;
+			float z = ((float)maImage[(x + y * mWidth) * 4] / 255.0f) * mHeightScale;
 
 			if (z > max) max = z;
 			if (z < min) min = z;
@@ -265,81 +311,95 @@ XMFLOAT2 Terrain::CalcZBounds(Vertex bottomLeft, Vertex topRight) {
 
 // load the specified file containing the heightmap data.
 void Terrain::LoadHeightMap(const char* fnHeightMap) {
-	// load the black and white heightmap png file. Data is RGBA unsigned char.
-	unsigned char* tmpHeightMap;
-	unsigned error = lodepng_decode32_file(&tmpHeightMap, &mWidth, &mDepth, fnHeightMap);
-	if (error) {
-		throw GFX_Exception("Error loading terrain heightmap texture.");
-	}
+	unsigned int index;
+	index = m_pResMgr->LoadFile(fnHeightMap, mDepth, mWidth);
+	maImage = m_pResMgr->GetFileData(index);
 
-	// Convert the height values to a float.
-	maImage = new float[mWidth * mDepth]; // one slot for the height and 3 for the normal at the point.
-	// in this first loop, just copy the height value. We're going to scale it here as well.
-	for (unsigned int i = 0; i < mWidth * mDepth; ++i) {
-		// convert values to float between 0 and 1.
-		// store height value as a floating point value between 0 and 1.
-		maImage[i] = (float)tmpHeightMap[i * 4] / 255.0f;
-	}
-	// we don't need the original data anymore.
-	delete[] tmpHeightMap; 
-}
-
-void Terrain::LoadDisplacementMap(const char* fnMap, const char* fnNMap) {
-	// load the black and white heightmap png file. Data is RGBA unsigned char.
-	unsigned char* tmpMap;
-	unsigned char* tmpNMap;
-
-	unsigned error = lodepng_decode32_file(&tmpMap, &mDispWidth, &mDispDepth, fnMap);
-	if (error) {
-		throw GFX_Exception("Error loading terrain displacement map texture.");
-	}
-	error = lodepng_decode32_file(&tmpNMap, &mDispWidth, &mDispDepth, fnNMap);
-	if (error) {
-		throw GFX_Exception("Error loading terrain displacement normal map texture.");
-	}
+	// Create the texture buffers.
+	D3D12_RESOURCE_DESC	descTex = {};
+	descTex.MipLevels = 1;
+	descTex.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	descTex.Width = mWidth;
+	descTex.Height = mDepth;
+	descTex.Flags = D3D12_RESOURCE_FLAG_NONE;
+	descTex.DepthOrArraySize = 1;
+	descTex.SampleDesc.Count = 1;
+	descTex.SampleDesc.Quality = 0;
+	descTex.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
 	
-	// Convert the height values to a float.
-	maDispImage = new float[mDispWidth * mDispDepth * 4]; 
+	ID3D12Resource* hm;
+	unsigned int iBuffer = m_pResMgr->NewBuffer(hm, &descTex, &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT), D3D12_HEAP_FLAG_NONE,
+		D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, nullptr);
+	hm->SetName(L"Height Map");
 
-	// combine the normal map with the displacement height map so that xyz is normal, w is height
-	for (unsigned int i = 0; i < mDispWidth * mDispDepth * 4; i += 4) {
-		// convert values to float between 0 and 1.
-		maDispImage[i] = (float)tmpNMap[i] / 255.0f;
-		maDispImage[i + 1] = (float)tmpNMap[i + 1] / 255.0f;
-		maDispImage[i + 2] = (float)tmpNMap[i + 2] / 255.0f;
-		maDispImage[i + 3] = (float)tmpMap[i] / 255.0f;
-	}
-	// we don't need the original data anymore.
-	delete[] tmpMap;
-	delete[] tmpNMap;
+	// prepare height map data for upload.
+	D3D12_SUBRESOURCE_DATA dataTex = {};
+	dataTex.pData = maImage;
+	dataTex.RowPitch = mWidth * 4 * sizeof(unsigned char);
+	dataTex.SlicePitch = mDepth * mWidth * 4 * sizeof(unsigned char);	
+	
+	m_pResMgr->UploadToBuffer(iBuffer, 1, &dataTex, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+
+	// Create the SRV for the detail map texture and save to Terrain object.
+	D3D12_SHADER_RESOURCE_VIEW_DESC	descSRV = {};
+	descSRV.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	descSRV.Format = descTex.Format;
+	descSRV.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	descSRV.Texture2D.MipLevels = 1;
+
+	m_pResMgr->AddSRV(hm, &descSRV, m_hdlHeightMapSRV_CPU, m_hdlHeightMapSRV_GPU);
 }
 
-void Terrain::LoadDetailDepthMap(int index, const char* fnDiffuse, const char* fnDepth) {
-	// load the black and white heightmap png file. Data is RGBA unsigned char.
-	unsigned char* tmpDiffuseMap;
-	unsigned char* tmpDepthMap;
-	unsigned error = lodepng_decode32_file(&tmpDiffuseMap, &mDetailWidth, &mDetailHeight, fnDiffuse);
-	if (error) {
-		throw GFX_Exception("Error loading terrain diffuse map texture.");
-	}
+void Terrain::LoadDisplacementMap(const char* fnMap) {
+	unsigned int index;
+	index = m_pResMgr->LoadFile(fnMap, mDispDepth, mDispWidth);
+	maDispImage = m_pResMgr->GetFileData(index);
 
-	error = lodepng_decode32_file(&tmpDepthMap, &mDetailWidth, &mDetailHeight, fnDepth);
-	if (error) {
-		throw GFX_Exception("Error loading terrain depth map texture.");
-	}
+	// Create the texture buffers.
+	D3D12_RESOURCE_DESC	descTex = {};
+	descTex.MipLevels = 1;
+	descTex.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	descTex.Width = mDispWidth;
+	descTex.Height = mDispDepth;
+	descTex.Flags = D3D12_RESOURCE_FLAG_NONE;
+	descTex.DepthOrArraySize = 1;
+	descTex.SampleDesc.Count = 1;
+	descTex.SampleDesc.Quality = 0;
+	descTex.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
 
-	// Convert the height values to a float.
-	maDetailImages[index] = new float[mDetailWidth * mDetailHeight * 4]; // one slot for the height and 3 for the normal at the point.
-																		 // in this first loop, just copy the height value. We're going to scale it here as well.
-	for (unsigned int i = 0; i < mDetailWidth * mDetailHeight * 4; i += 4) {
-		// convert values to float between 0 and 1.
-		// store height value as a floating point value between 0 and 1.
-		maDetailImages[index][i] = (float)tmpDiffuseMap[i] / 255.0f;
-		maDetailImages[index][i + 1] = (float)tmpDiffuseMap[i + 1] / 255.0f;
-		maDetailImages[index][i + 2] = (float)tmpDiffuseMap[i + 2] / 255.0f;
-		maDetailImages[index][i + 3] = (float)tmpDepthMap[i] / 255.0f;
-	}
-	// we don't need the original data anymore.
-	delete[] tmpDiffuseMap;
-	delete[] tmpDepthMap;
+	ID3D12Resource* dm;
+	unsigned int iBuffer = m_pResMgr->NewBuffer(dm, &descTex, &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT), D3D12_HEAP_FLAG_NONE,
+		D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, nullptr);
+	dm->SetName(L"Displacement Map");
+
+	D3D12_SUBRESOURCE_DATA dataTex = {};
+	// prepare height map data for upload.
+	dataTex.pData = maDispImage;
+	dataTex.RowPitch = mDispWidth * 4 * sizeof(unsigned char);
+	dataTex.SlicePitch = mDispDepth * mDispWidth * 4 * sizeof(unsigned char);
+
+	m_pResMgr->UploadToBuffer(iBuffer, 1, &dataTex, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+
+	// Create the SRV for the detail map texture and save to Terrain object.
+	D3D12_SHADER_RESOURCE_VIEW_DESC	descSRV = {};
+	descSRV.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	descSRV.Format = descTex.Format;
+	descSRV.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	descSRV.Texture2D.MipLevels = 1;
+
+	m_pResMgr->AddSRV(dm, &descSRV, m_hdlDisplacementMapSRV_CPU, m_hdlDisplacementMapSRV_GPU);
+}
+
+// Attach the resources needed for rendering terrain.
+// Requires the indices into the root descriptor table to attach the heightmap and displacement map SRVs and constant buffer CBV to.
+void Terrain::AttachTerrainResources(ID3D12GraphicsCommandList* cmdList, unsigned int srvDescTableIndexHeightMap,
+	unsigned int srvDescTableIndexDisplacementMap, unsigned int cbvDescTableIndex) {
+	cmdList->SetGraphicsRootDescriptorTable(srvDescTableIndexHeightMap, m_hdlHeightMapSRV_GPU);
+	cmdList->SetGraphicsRootDescriptorTable(srvDescTableIndexDisplacementMap, m_hdlDisplacementMapSRV_GPU);
+	cmdList->SetGraphicsRootDescriptorTable(cbvDescTableIndex, m_hdlConstantsCBV_GPU);
+}
+
+// Attach the material resources. Requires root descriptor table index.
+void Terrain::AttachMaterialResources(ID3D12GraphicsCommandList* cmdList, unsigned int srvDescTableIndex) {
+	m_pMat->Attach(cmdList, srvDescTableIndex);
 }

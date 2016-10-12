@@ -157,10 +157,13 @@
     <ClCompile Include="Camera.cpp" />
     <ClCompile Include="DayNightCycle.cpp" />
     <ClCompile Include="DirectionalLight.cpp" />
+    <ClCompile Include="Frame.cpp" />
     <ClCompile Include="Graphics.cpp" />
     <ClCompile Include="Light.cpp" />
     <ClCompile Include="lodepng.cpp" />
     <ClCompile Include="Main.cpp" />
+    <ClCompile Include="Material.cpp" />
+    <ClCompile Include="ResourceManager.cpp" />
     <ClCompile Include="Scene.cpp" />
     <ClCompile Include="Terrain.cpp" />
     <ClCompile Include="Window.cpp" />
@@ -170,9 +173,12 @@
     <ClInclude Include="D3DX12.h" />
     <ClInclude Include="DayNightCycle.h" />
     <ClInclude Include="DirectionalLight.h" />
+    <ClInclude Include="Frame.h" />
     <ClInclude Include="Graphics.h" />
     <ClInclude Include="Light.h" />
     <ClInclude Include="lodepng.h" />
+    <ClInclude Include="Material.h" />
+    <ClInclude Include="ResourceManager.h" />
     <ClInclude Include="Scene.h" />
     <ClInclude Include="Terrain.h" />
     <ClInclude Include="Window.h" />

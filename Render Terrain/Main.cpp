@@ -49,7 +49,6 @@ static void KeyDown(UINT key) {
 		case _Z:
 		case _1:
 		case _2:
-		case _3:
 		case _T:
 			pScene->HandleKeyboardInput(key);
 			break;
@@ -104,8 +103,8 @@ static LRESULT CALLBACK WndProc(HWND win , UINT msg, WPARAM wp, LPARAM lp) {
 int WINAPI WinMain(HINSTANCE instance, HINSTANCE prevInstance, PSTR cmdLine, int cmdShow) {
 	try {
 		Window WIN(appName, WINDOW_HEIGHT, WINDOW_WIDTH, WndProc, FULL_SCREEN);
-		Graphics GFX(WIN.Height(), WIN.Width(), WIN.GetWindow(), FULL_SCREEN);
-		Scene S(WIN.Height(), WIN.Width(), &GFX);
+		Device DEV(WIN.GetWindow(), WIN.Height(), WIN.Width());
+		Scene S(WIN.Height(), WIN.Width(), &DEV);
 		pScene = &S; // create a pointer to the scene for access outside of main.
 
 		MSG msg;

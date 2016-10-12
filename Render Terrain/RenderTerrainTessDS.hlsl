@@ -1,12 +1,4 @@
-cbuffer PerFrameData : register(b0)
-{
-	float4x4 viewproj;
-	float4x4 shadowtexmatrices[4];
-	float4 eye;
-	float4 frustum[6];
-}
-
-cbuffer TerrainData : register(b1)
+cbuffer TerrainData : register(b0)
 {
 	float scale;
 	float width;
@@ -14,8 +6,16 @@ cbuffer TerrainData : register(b1)
 	float base;
 }
 
-Texture2D<float> heightmap : register(t0);
-Texture2D<float4> displacementmap : register(t2);
+cbuffer PerFrameData : register(b1)
+{
+	float4x4 viewproj;
+	float4x4 shadowtexmatrices[4];
+	float4 eye;
+	float4 frustum[6];
+}
+
+Texture2D<float4> heightmap : register(t0);
+Texture2D<float4> displacementmap : register(t1);
 
 SamplerState hmsampler : register(s0);
 SamplerState detailsampler : register(s1);
@@ -54,14 +54,14 @@ float3 estimateNormal(float2 texcoord) {
 	float2 h = texcoord + float2(-0.3f / width, 0.0f);
 	float2 i = texcoord + float2(-0.3f / width, -0.3f / depth);
 
-	float zb = heightmap.SampleLevel(hmsampler, b, 0) * scale;
-	float zc = heightmap.SampleLevel(hmsampler, c, 0) * scale;
-	float zd = heightmap.SampleLevel(hmsampler, d, 0) * scale;
-	float ze = heightmap.SampleLevel(hmsampler, e, 0) * scale;
-	float zf = heightmap.SampleLevel(hmsampler, f, 0) * scale;
-	float zg = heightmap.SampleLevel(hmsampler, g, 0) * scale;
-	float zh = heightmap.SampleLevel(hmsampler, h, 0) * scale;
-	float zi = heightmap.SampleLevel(hmsampler, i, 0) * scale;
+	float zb = heightmap.SampleLevel(hmsampler, b, 0).x * scale;
+	float zc = heightmap.SampleLevel(hmsampler, c, 0).x * scale;
+	float zd = heightmap.SampleLevel(hmsampler, d, 0).x * scale;
+	float ze = heightmap.SampleLevel(hmsampler, e, 0).x * scale;
+	float zf = heightmap.SampleLevel(hmsampler, f, 0).x * scale;
+	float zg = heightmap.SampleLevel(hmsampler, g, 0).x * scale;
+	float zh = heightmap.SampleLevel(hmsampler, h, 0).x * scale;
+	float zi = heightmap.SampleLevel(hmsampler, i, 0).x * scale;
 
 	float x = zg + 2 * zh + zi - zc - 2 * zd - ze;
 	float y = 2 * zb + zc + zi - ze - 2 * zf - zg;
@@ -83,11 +83,11 @@ DS_OUTPUT main(
 	float h;
 	if (input.skirt < 5) {
 		if (input.skirt > 0 && domain.y == 1) {
-			h = heightmap.SampleLevel(hmsampler, output.worldpos / width, 0.0f);
+			h = heightmap.SampleLevel(hmsampler, output.worldpos / width, 0.0f).x;
 			output.worldpos.z = h * scale;
 		}
 	} else {
-		h = heightmap.SampleLevel(hmsampler, output.worldpos / width, 0.0f);
+		h = heightmap.SampleLevel(hmsampler, output.worldpos / width, 0.0f).x;
 		output.worldpos.z = h * scale;
 	}
 	
