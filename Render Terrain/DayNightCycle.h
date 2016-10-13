@@ -2,7 +2,7 @@
 DayNightCycle.h
 
 Author:			Chris Serson
-Last Edited:	September 15, 2016
+Last Edited:	October 12, 2016
 
 Description:	Class for managing the Day/Night Cycle for the scene.
 
@@ -10,7 +10,7 @@ Usage:			- Calling the constructor, either through DayNightCycle D(...);
 				or DayNightCycle* D; D = new DayNightCycle(...);, will initialize
 				the object.
 				- Proper shutdown is handled by the destructor.
-				- Call Update() to move time forward. Moves forward by real time passed * mPeriod.
+				- Call Update() to move time forward. Moves forward by real time passed * m_Period.
 				- Currently only works for Sun, aligned with y axis.
 				- Time currently starts at midnight
 				- Diffuse and Specular light intensities for the Sun now interpolated based on angle/position of Sun.
@@ -63,26 +63,26 @@ public:
 	~DayNightCycle();
 
 	void Update(XMFLOAT3 centerBS, float radiusBS, Camera* cam);
-	void TogglePause() { isPaused = !isPaused; }
+	void TogglePause() { m_isPaused = !m_isPaused; }
 
-	LightSource GetLight() { return mdlSun.GetLight(); }
-	XMFLOAT4X4 GetShadowViewProjMatrix(int i) { return maShadowViewProjs[i]; }
-	XMFLOAT4X4 GetShadowViewProjTexMatrix(int i) { return maShadowViewProjTexs[i]; }
+	LightSource GetLight() { return m_dlSun.GetLight(); }
+	XMFLOAT4X4 GetShadowViewProjMatrix(int i) { return m_amShadowViewProjs[i]; }
+	XMFLOAT4X4 GetShadowViewProjTexMatrix(int i) { return m_amShadowViewProjTexs[i]; }
 	void GetShadowFrustum(int i, XMFLOAT4 planes[6]);
 
 private:
 	void CalculateShadowMatrices(XMFLOAT3 centerBS, float radiusBS, Camera* cam);
 	void CalculateShadowFrustum(int i, XMMATRIX VP);
 		
-	UINT						mPeriod;	// the number of game milliseconds that each real time millisecond should count as.
-	DirectionalLight			mdlSun;		// light source representing the sun. 
-	DirectionalLight			mdlMoon;	// light source representing the moon.
-	time_point<system_clock>	mtLast;		// the last point in time that we updated our cycle.
-	float						mCurrentSunAngle = 0.0f;
-	bool						isPaused = false;
-	UINT						mShadowMapSize;
-	XMFLOAT4X4					maShadowViewProjs[4];
-	XMFLOAT4X4					maShadowViewProjTexs[4];
-	XMFLOAT4					maShadowFrustums[4][4];
+	UINT						m_Period;	// the number of game milliseconds that each real time millisecond should count as.
+	DirectionalLight			m_dlSun;		// light source representing the sun. 
+	DirectionalLight			m_dlMoon;	// light source representing the moon.
+	time_point<system_clock>	m_tLast;		// the last point in time that we updated our cycle.
+	float						m_angleSun = 0.0f;
+	bool						m_isPaused = false;
+	UINT						m_sizeShadowMap;
+	XMFLOAT4X4					m_amShadowViewProjs[4];
+	XMFLOAT4X4					m_amShadowViewProjTexs[4];
+	XMFLOAT4					m_aShadowFrustums[4][4];
 };
 

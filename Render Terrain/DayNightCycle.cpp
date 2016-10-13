@@ -2,7 +2,7 @@
 DayNightCycle.cpp
 
 Author:			Chris Serson
-Last Edited:	September 16, 2016
+Last Edited:	October 12, 2016
 
 Description:	Class for managing the Day/Night Cycle for the scene.
 */
@@ -18,10 +18,10 @@ XMFLOAT4 ColorLerp(XMFLOAT4 color1, XMFLOAT4 color2, float interpolator) {
 	return newcolor;
 }
 
-DayNightCycle::DayNightCycle(UINT period, UINT shadowSize) : mdlSun(XMFLOAT4(0.3f, 0.3f, 0.3f, 1.0f), SUN_DIFFUSE_COLORS[0], SUN_SPECULAR_COLORS[0], XMFLOAT3(0.0f, 0.0f, 1.0f)),
-								mdlMoon(XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f), XMFLOAT4(0.4f, 0.4f, 0.4f, 1.0f), XMFLOAT4(0.6f, 0.6f, 0.6f, 1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f)),
-								mPeriod(period), mShadowMapSize(shadowSize) {
-	mtLast = system_clock::now();
+DayNightCycle::DayNightCycle(UINT period, UINT shadowSize) : m_dlSun(XMFLOAT4(0.3f, 0.3f, 0.3f, 1.0f), SUN_DIFFUSE_COLORS[0], SUN_SPECULAR_COLORS[0], XMFLOAT3(0.0f, 0.0f, 1.0f)),
+								m_dlMoon(XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f), XMFLOAT4(0.4f, 0.4f, 0.4f, 1.0f), XMFLOAT4(0.6f, 0.6f, 0.6f, 1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f)),
+								m_Period(period), m_sizeShadowMap(shadowSize) {
+	m_tLast = system_clock::now();
 }
 
 DayNightCycle::~DayNightCycle() {
@@ -30,24 +30,24 @@ DayNightCycle::~DayNightCycle() {
 void DayNightCycle::Update(XMFLOAT3 centerBS, float radiusBS, Camera* cam) {
 	time_point<system_clock> now = system_clock::now();
 
-	if (!isPaused) {
+	if (!m_isPaused) {
 		// get the amount of time in ms since the last time we updated.
-		milliseconds elapsed = duration_cast<milliseconds>(now - mtLast);
+		milliseconds elapsed = duration_cast<milliseconds>(now - m_tLast);
 
 		// calculate how far to rotate.
-		double angletorotate = elapsed.count() * mPeriod * DEG_PER_MILLI;
+		double angletorotate = elapsed.count() * m_Period * DEG_PER_MILLI;
 		float angleinrads = XMConvertToRadians((float)angletorotate);
 
 		// rotate the sun's direction vector.
-		XMFLOAT3 tmp = mdlSun.GetLight().direction;
+		XMFLOAT3 tmp = m_dlSun.GetLight().direction;
 		XMVECTOR dir = XMLoadFloat3(&tmp);
 		XMVECTOR rot = XMQuaternionRotationRollPitchYaw(0.0f, -(float)angleinrads, 0.0f);
 		dir = XMVector3Normalize(XMVector3Rotate(dir, rot));
 		XMStoreFloat3(&tmp, dir);
-		mdlSun.SetLightDirection(tmp);
+		m_dlSun.SetLightDirection(tmp);
 
 		// use the angletorotate to calculate what the current colour of the Sun should be.
-		float newangle = fmod(mCurrentSunAngle + (float)angletorotate, 360.0f);
+		float newangle = fmod(m_angleSun + (float)angletorotate, 360.0f);
 		int iColor1, iColor2; // color indices to get colors to interpolate between
 		float iInterpolator; // amount to interpolate by
 		if (newangle >= 330.0f) {
@@ -100,24 +100,24 @@ void DayNightCycle::Update(XMFLOAT3 centerBS, float radiusBS, Camera* cam) {
 			iInterpolator = newangle / 30.0f;
 		}
 		
-		mdlSun.SetDiffuseColor(ColorLerp(SUN_DIFFUSE_COLORS[iColor1], SUN_DIFFUSE_COLORS[iColor2], iInterpolator));
-		mdlSun.SetSpecularColor(ColorLerp(SUN_SPECULAR_COLORS[iColor1], SUN_SPECULAR_COLORS[iColor2], iInterpolator));
+		m_dlSun.SetDiffuseColor(ColorLerp(SUN_DIFFUSE_COLORS[iColor1], SUN_DIFFUSE_COLORS[iColor2], iInterpolator));
+		m_dlSun.SetSpecularColor(ColorLerp(SUN_SPECULAR_COLORS[iColor1], SUN_SPECULAR_COLORS[iColor2], iInterpolator));
 
-		mCurrentSunAngle = newangle;
+		m_angleSun = newangle;
 	}
 
 	// update the time for the next pass.
-	mtLast = now;
+	m_tLast = now;
 
 	CalculateShadowMatrices(centerBS, radiusBS, cam);
 }
 
 void DayNightCycle::CalculateShadowMatrices(XMFLOAT3 centerBS, float radiusBS, Camera* cam) {
-	LightSource light = mdlSun.GetLight();
+	LightSource light = m_dlSun.GetLight();
 	XMVECTOR lightdir = XMLoadFloat3(&light.direction);
 	XMVECTOR targetpos = XMLoadFloat3(&centerBS);
 	
-	float offset = (float)(mShadowMapSize + 8) / (float)mShadowMapSize; // add padding to projection for rounding and for pcf.
+	float offset = (float)(m_sizeShadowMap + 8) / (float)m_sizeShadowMap; // add padding to projection for rounding and for pcf.
 	float radiusScene = ceilf(radiusBS) * offset;
 
 	XMVECTOR lightpos = targetpos - 2.0f * radiusScene * lightdir;
@@ -152,12 +152,12 @@ void DayNightCycle::CalculateShadowMatrices(XMFLOAT3 centerBS, float radiusBS, C
 
 		// add rounding to update shadowmap by texel-sized increments.
 		XMVECTOR shadowOrigin = XMVector3Transform(XMVectorZero(), S);
-		shadowOrigin *= ((float)(mShadowMapSize + offset) / 4.0f);
+		shadowOrigin *= ((float)(m_sizeShadowMap + offset) / 4.0f);
 		XMFLOAT2 so;
 		XMStoreFloat2(&so, shadowOrigin);
 		XMVECTOR roundedOrigin = XMLoadFloat2(&XMFLOAT2(round(so.x), round(so.y)));
 		XMVECTOR rounding = roundedOrigin - shadowOrigin;
-		rounding /= ((mShadowMapSize + offset) / 4.0f);
+		rounding /= ((m_sizeShadowMap + offset) / 4.0f);
 		XMStoreFloat2(&so, rounding);
 		XMMATRIX roundMatrix = XMMatrixTranslation(so.x, so.y, 0.0f);
 		S *= roundMatrix;
@@ -165,7 +165,7 @@ void DayNightCycle::CalculateShadowMatrices(XMFLOAT3 centerBS, float radiusBS, C
 		// Calculate the frustum planes for this view projection matrix.
 		CalculateShadowFrustum(i, S);
 		
-		XMStoreFloat4x4(&maShadowViewProjs[i], XMMatrixTranspose(S));
+		XMStoreFloat4x4(&m_amShadowViewProjs[i], XMMatrixTranspose(S));
 
 		// transform NDC space [-1, +1]^2 to texture space [0, 1]^2
 		float x, y;
@@ -190,7 +190,7 @@ void DayNightCycle::CalculateShadowMatrices(XMFLOAT3 centerBS, float radiusBS, C
 
 		S *= T;
 
-		XMStoreFloat4x4(&maShadowViewProjTexs[i], XMMatrixTranspose(S));
+		XMStoreFloat4x4(&m_amShadowViewProjTexs[i], XMMatrixTranspose(S));
 	}
 
 	XMVECTOR c = XMLoadFloat3(&centerBS);
@@ -210,12 +210,12 @@ void DayNightCycle::CalculateShadowMatrices(XMFLOAT3 centerBS, float radiusBS, C
 
 	// add rounding to update shadowmap by texel-sized increments.
 	XMVECTOR shadowOrigin = XMVector3Transform(XMVectorZero(), S);
-	shadowOrigin *= ((float)(mShadowMapSize + offset) / 4.0f);
+	shadowOrigin *= ((float)(m_sizeShadowMap + offset) / 4.0f);
 	XMFLOAT2 so;
 	XMStoreFloat2(&so, shadowOrigin);
 	XMVECTOR roundedOrigin = XMLoadFloat2(&XMFLOAT2(round(so.x), round(so.y)));
 	XMVECTOR rounding = roundedOrigin - shadowOrigin;
-	rounding /= ((mShadowMapSize + offset) / 4.0f);
+	rounding /= ((m_sizeShadowMap + offset) / 4.0f);
 	XMStoreFloat2(&so, rounding);
 	XMMATRIX roundMatrix = XMMatrixTranslation(so.x, so.y, 0.0f);
 	S *= roundMatrix;
@@ -223,7 +223,7 @@ void DayNightCycle::CalculateShadowMatrices(XMFLOAT3 centerBS, float radiusBS, C
 	// Calculate the frustum planes for this view projection matrix.
 	CalculateShadowFrustum(3, S);
 
-	XMStoreFloat4x4(&maShadowViewProjs[3], XMMatrixTranspose(S));
+	XMStoreFloat4x4(&m_amShadowViewProjs[3], XMMatrixTranspose(S));
 
 	// transform NDC space [-1, +1]^2 to texture space [0, 1]^2
 	XMMATRIX T(0.25f, 0.0f, 0.0f, 0.0f,
@@ -233,7 +233,7 @@ void DayNightCycle::CalculateShadowMatrices(XMFLOAT3 centerBS, float radiusBS, C
 
 	S *= T;
 
-	XMStoreFloat4x4(&maShadowViewProjTexs[3], XMMatrixTranspose(S));
+	XMStoreFloat4x4(&m_amShadowViewProjTexs[3], XMMatrixTranspose(S));
 }
 
 void DayNightCycle::CalculateShadowFrustum(int i, XMMATRIX VP) {
@@ -241,38 +241,38 @@ void DayNightCycle::CalculateShadowFrustum(int i, XMMATRIX VP) {
 	XMStoreFloat4x4(&M, VP);
 
 	// left
-	maShadowFrustums[i][0].x = M(0, 3) + M(0, 0);
-	maShadowFrustums[i][0].y = M(1, 3) + M(1, 0);
-	maShadowFrustums[i][0].z = M(2, 3) + M(2, 0);
-	maShadowFrustums[i][0].w = M(3, 3) + M(3, 0);
+	m_aShadowFrustums[i][0].x = M(0, 3) + M(0, 0);
+	m_aShadowFrustums[i][0].y = M(1, 3) + M(1, 0);
+	m_aShadowFrustums[i][0].z = M(2, 3) + M(2, 0);
+	m_aShadowFrustums[i][0].w = M(3, 3) + M(3, 0);
 
 	// right
-	maShadowFrustums[i][1].x = M(0, 3) - M(0, 0);
-	maShadowFrustums[i][1].y = M(1, 3) - M(1, 0);
-	maShadowFrustums[i][1].z = M(2, 3) - M(2, 0);
-	maShadowFrustums[i][1].w = M(3, 3) - M(3, 0);
+	m_aShadowFrustums[i][1].x = M(0, 3) - M(0, 0);
+	m_aShadowFrustums[i][1].y = M(1, 3) - M(1, 0);
+	m_aShadowFrustums[i][1].z = M(2, 3) - M(2, 0);
+	m_aShadowFrustums[i][1].w = M(3, 3) - M(3, 0);
 
 	// bottom
-	maShadowFrustums[i][2].x = M(0, 3) + M(0, 1);
-	maShadowFrustums[i][2].y = M(1, 3) + M(1, 1);
-	maShadowFrustums[i][2].z = M(2, 3) + M(2, 1);
-	maShadowFrustums[i][2].w = M(3, 3) + M(3, 1);
+	m_aShadowFrustums[i][2].x = M(0, 3) + M(0, 1);
+	m_aShadowFrustums[i][2].y = M(1, 3) + M(1, 1);
+	m_aShadowFrustums[i][2].z = M(2, 3) + M(2, 1);
+	m_aShadowFrustums[i][2].w = M(3, 3) + M(3, 1);
 
 	// top
-	maShadowFrustums[i][3].x = M(0, 3) - M(0, 1);
-	maShadowFrustums[i][3].y = M(1, 3) - M(1, 1);
-	maShadowFrustums[i][3].z = M(2, 3) - M(2, 1);
-	maShadowFrustums[i][3].w = M(3, 3) - M(3, 1);
+	m_aShadowFrustums[i][3].x = M(0, 3) - M(0, 1);
+	m_aShadowFrustums[i][3].y = M(1, 3) - M(1, 1);
+	m_aShadowFrustums[i][3].z = M(2, 3) - M(2, 1);
+	m_aShadowFrustums[i][3].w = M(3, 3) - M(3, 1);
 
 	// normalize all planes
 	for (auto j = 0; j < 4; ++j) {
-		XMVECTOR v = XMPlaneNormalize(XMLoadFloat4(&maShadowFrustums[i][j]));
-		XMStoreFloat4(&maShadowFrustums[i][j], v);
+		XMVECTOR v = XMPlaneNormalize(XMLoadFloat4(&m_aShadowFrustums[i][j]));
+		XMStoreFloat4(&m_aShadowFrustums[i][j], v);
 	}
 }
 
 void DayNightCycle::GetShadowFrustum(int i, XMFLOAT4 planes[6]) {
 	for (int j = 0; j < 4; ++j) {
-		planes[j] = maShadowFrustums[i][j];
+		planes[j] = m_aShadowFrustums[i][j];
 	}
 }

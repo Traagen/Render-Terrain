@@ -2,7 +2,7 @@
 Window.h
 
 Author:			Chris Serson
-Last Edited:	June 21, 2016
+Last Edited:	October 12, 2016
 
 Description:	Class for creating a window in a Win32 application.
 
@@ -35,16 +35,16 @@ namespace window {
 		Window(LPCWSTR appName, int height, int width, WNDPROC WndProc, bool isFullscreen);
 		~Window();
 
-		HWND GetWindow() { return mWindow; }
-		int Height() { return mDepth; }
-		int Width() { return mWidth; }
+		HWND GetWindow() { return m_Window; }
+		int Height() { return m_hWindow; }
+		int Width() { return m_wWindow; }
 
 	private:
-		HINSTANCE mInstance;
-		HWND mWindow;
-		bool mFullscreen;
-		int mDepth;
-		int mWidth;
-		LPCWSTR mAppName;
+		HINSTANCE m_Instance;
+		HWND m_Window;
+		bool m_isFullscreen;
+		int m_hWindow;
+		int m_wWindow;
+		LPCWSTR m_nameApp;
 	};
 }

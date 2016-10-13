@@ -59,8 +59,8 @@ public:
 	// Attach the material resources. Requires root descriptor table index.
 	void AttachMaterialResources(ID3D12GraphicsCommandList* cmdList, unsigned int srvDescTableIndex);
 
-	UINT GetHeightMapWidth() { return mWidth; }
-	UINT GetHeightMapDepth() { return mDepth; }
+	UINT GetHeightMapWidth() { return m_wHeightMap; }
+	UINT GetHeightMapDepth() { return m_hHeightMap; }
 	
 	// Once the GPU has completed uploading buffers to GPU memory, we need to free system memory.
 	void DeleteVertexAndIndexArrays();
@@ -83,26 +83,26 @@ private:
 	
 	TerrainMaterial*			m_pMat;
 	ResourceManager*			m_pResMgr;
-	D3D12_VERTEX_BUFFER_VIEW	mVBV;
-	D3D12_INDEX_BUFFER_VIEW		mIBV;
+	D3D12_VERTEX_BUFFER_VIEW	m_viewVertexBuffer;
+	D3D12_INDEX_BUFFER_VIEW		m_viewIndexBuffer;
 	D3D12_CPU_DESCRIPTOR_HANDLE m_hdlHeightMapSRV_CPU;
 	D3D12_GPU_DESCRIPTOR_HANDLE m_hdlHeightMapSRV_GPU;
 	D3D12_CPU_DESCRIPTOR_HANDLE m_hdlDisplacementMapSRV_CPU;
 	D3D12_GPU_DESCRIPTOR_HANDLE m_hdlDisplacementMapSRV_GPU;
 	D3D12_CPU_DESCRIPTOR_HANDLE m_hdlConstantsCBV_CPU;
 	D3D12_GPU_DESCRIPTOR_HANDLE m_hdlConstantsCBV_GPU;
-	unsigned char*				maImage;
-	unsigned char*				maDispImage;
-	unsigned int				mWidth;
-	unsigned int				mDepth;
-	unsigned int				mDispWidth;
-	unsigned int				mDispDepth;
-	int							mBaseHeight;
-	unsigned long				mVertexCount;
-	unsigned long				mIndexCount;
-	float						mHeightScale;
-	Vertex*						maVertices;		// buffer to contain vertex array prior to upload.
-	UINT*						maIndices;		// buffer to contain index array prior to upload.
+	unsigned char*				m_dataHeightMap;
+	unsigned char*				m_dataDisplacementMap;
+	unsigned int				m_wHeightMap;
+	unsigned int				m_hHeightMap;
+	unsigned int				m_wDisplacementMap;
+	unsigned int				m_hDisplacementMap;
+	int							m_hBase;
+	unsigned long				m_numVertices;
+	unsigned long				m_numIndices;
+	float						m_scaleHeightMap;
+	Vertex*						m_dataVertices;		// buffer to contain vertex array prior to upload.
+	UINT*						m_dataIndices;		// buffer to contain index array prior to upload.
 	TerrainShaderConstants*		m_pConstants;
 };
 

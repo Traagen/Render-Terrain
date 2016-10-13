@@ -73,14 +73,14 @@ private:
 	Frame*								m_pFrames[::FRAME_BUFFER_COUNT];
 	ID3D12GraphicsCommandList*			m_pCmdList;
 	Terrain*							m_pT;
-	Camera								C;
-	DayNightCycle						DNC;
-	D3D12_VIEWPORT						mViewport;
-	D3D12_RECT							mScissorRect;
-	int									mDrawMode = 0;
-	std::vector<ID3D12RootSignature*>	mlRootSigs;
-	std::vector<ID3D12PipelineState*>	mlPSOs;
-	int									mFrame = 0;
-	bool								mUseTextures = false;
+	Camera								m_Cam;
+	DayNightCycle						m_DNC;
+	D3D12_VIEWPORT						m_vpMain;
+	D3D12_RECT							m_srMain;
+	int									m_drawMode = 0;
+	std::vector<ID3D12RootSignature*>	m_listRootSigs;
+	std::vector<ID3D12PipelineState*>	m_listPSOs;
+	int									m_iFrame = 0;
+	bool								m_UseTextures = false;
 };
 

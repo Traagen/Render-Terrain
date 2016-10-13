@@ -2,7 +2,7 @@
 Camera.cpp
 
 Author:			Chris Serson
-Last Edited:	September 15, 2016
+Last Edited:	October 12, 2016
 
 Description:	Class for creating and controlling the camera
 */
@@ -10,25 +10,25 @@ Description:	Class for creating and controlling the camera
 #include "Camera.h"
 
 Camera::Camera(int h, int w) {
-	mYaw = mPitch = mRoll = 0.0f;
-	mWidth = w;
-	mHeight = h;
-	mVFOV = 60.0f;
-	double tmp = atan(tan(XMConvertToRadians(mVFOV) * 0.5) * w / h) * 2.0;
-	mHFOV = XMConvertToDegrees((float)tmp);
+	m_angleYaw = m_anglePitch = m_angleRoll = 0.0f;
+	m_wScreen = w;
+	m_hScreen = h;
+	m_fovVertical = 60.0f;
+	double tmp = atan(tan(XMConvertToRadians(m_fovVertical) * 0.5) * w / h) * 2.0;
+	m_fovHorizontal = XMConvertToDegrees((float)tmp);
 
 	// build projection matrix
-	XMMATRIX proj = XMMatrixPerspectiveFovLH(XMConvertToRadians(mVFOV), (float)w / (float)h, 0.1f, 3000.0f);
-	XMStoreFloat4x4(&mmProjection, proj);
+	XMMATRIX proj = XMMatrixPerspectiveFovLH(XMConvertToRadians(m_fovVertical), (float)w / (float)h, 0.1f, 3000.0f);
+	XMStoreFloat4x4(&m_mProjection, proj);
 
 	// set starting camera state
-	mvPos = XMFLOAT4(0.0f, 0.0f, 150.0f, 0.0f);
+	m_vPos = XMFLOAT4(0.0f, 0.0f, 150.0f, 0.0f);
 	XMVECTOR look = XMVector3Normalize(XMLoadFloat4(&XMFLOAT4(1.0f, 1.0f, 0.0f, 0.0f)));
-	XMStoreFloat4(&mvStartLook, look);
+	XMStoreFloat4(&m_vStartLook, look);
 	XMVECTOR left = XMVector3Cross(look, XMLoadFloat4(&XMFLOAT4(0.0f, 0.0f, 1.0f, 0.0f)));
-	XMStoreFloat4(&mvStartLeft, left);
+	XMStoreFloat4(&m_vStartLeft, left);
 	XMVECTOR up = XMVector3Cross(left, look);
-	XMStoreFloat4(&mvStartUp, up);
+	XMStoreFloat4(&m_vStartUp, up);
 
 	Update();
 }
@@ -38,8 +38,8 @@ Camera::~Camera() {
 
 // combine the view and projection matrices and transpose the result
 XMFLOAT4X4 Camera::GetViewProjectionMatrixTransposed() {
-	XMMATRIX view = XMLoadFloat4x4(&mmView);
-	XMMATRIX proj = XMLoadFloat4x4(&mmProjection);
+	XMMATRIX view = XMLoadFloat4x4(&m_mView);
+	XMMATRIX proj = XMLoadFloat4x4(&m_mProjection);
 	XMMATRIX viewproj = XMMatrixTranspose(view * proj);
 	XMFLOAT4X4 final;
 	XMStoreFloat4x4(&final, viewproj);
@@ -48,8 +48,8 @@ XMFLOAT4X4 Camera::GetViewProjectionMatrixTransposed() {
 
 // Return the 6 planes forming the view frustum. Stored in the array planes.
 void Camera::GetViewFrustum(XMFLOAT4 planes[6]) {
-	XMMATRIX view = XMLoadFloat4x4(&mmView);
-	XMMATRIX proj = XMLoadFloat4x4(&mmProjection);
+	XMMATRIX view = XMLoadFloat4x4(&m_mView);
+	XMMATRIX proj = XMLoadFloat4x4(&m_mProjection);
 	XMFLOAT4X4 M;
 	XMStoreFloat4x4(&M, view * proj);
 
@@ -98,11 +98,11 @@ void Camera::GetViewFrustum(XMFLOAT4 planes[6]) {
 
 void Camera::GetBoundingSphereByNearFar(float near, float far, XMFLOAT4& center, float& radius) {
 	// get the current view matrix
-	XMMATRIX view = XMLoadFloat4x4(&mmView);
+	XMMATRIX view = XMLoadFloat4x4(&m_mView);
 	// get the original projection matrix
-	//XMMATRIX proj = XMLoadFloat4x4(&mmProjection);
+	//XMMATRIX proj = XMLoadFloat4x4(&m_mProjection);
 	// calculate the projection matrix based on the supplied near/far planes.
-	XMMATRIX proj = XMMatrixPerspectiveFovLH(XMConvertToRadians(60.0f), (float)mWidth / (float)mHeight, near, far);
+	XMMATRIX proj = XMMatrixPerspectiveFovLH(XMConvertToRadians(60.0f), (float)m_wScreen / (float)m_hScreen, near, far);
 	XMMATRIX viewproj = view * proj;
 	XMMATRIX invViewProj = XMMatrixInverse(nullptr, viewproj); // the inverse view/projection matrix
 	
@@ -200,8 +200,8 @@ void FindBoundingSphere(XMFLOAT3 a, XMFLOAT3 b, XMFLOAT3 c, XMFLOAT3& center, fl
 Frustum Camera::CalculateFrustumByNearFar(float near, float far) {
 	Frustum f;
 
-	float tanHalfHFOV = tanf(XMConvertToRadians(mHFOV / 2.0f));
-	float tanHalfVFOV = tanf(XMConvertToRadians(mVFOV / 2.0f));
+	float tanHalfHFOV = tanf(XMConvertToRadians(m_fovHorizontal / 2.0f));
+	float tanHalfVFOV = tanf(XMConvertToRadians(m_fovVertical / 2.0f));
 
 	float xNear = near * tanHalfHFOV;
 	float xFar = far * tanHalfHFOV;
@@ -219,7 +219,7 @@ Frustum Camera::CalculateFrustumByNearFar(float near, float far) {
 	f.frt = XMFLOAT3( xFar,  yFar, far);
 
 	// get the current view and projection matrices
-	XMMATRIX view = XMLoadFloat4x4(&mmView);
+	XMMATRIX view = XMLoadFloat4x4(&m_mView);
 	XMMATRIX viewproj = view;
 	XMMATRIX invViewProj = XMMatrixInverse(nullptr, viewproj); // the inverse view/projection matrix
 
@@ -274,55 +274,55 @@ Frustum Camera::CalculateFrustumByNearFar(float near, float far) {
 	return f;
 }
 
-// Move the camera along its 3 axis: mvStartLook (forward/backward), mvStartLeft (left/left), mvStartUp (up/down)
+// Move the camera along its 3 axis: m_vStartLook (forward/backward), m_vStartLeft (left/left), m_vStartUp (up/down)
 void Camera::Translate(XMFLOAT3 move) {
-	XMVECTOR look = XMLoadFloat4(&mvCurLook);
-	XMVECTOR left = XMLoadFloat4(&mvCurLeft);
-	XMVECTOR up = XMLoadFloat4(&mvCurUp);
-	XMVECTOR tmp = XMLoadFloat4(&mvPos);
+	XMVECTOR look = XMLoadFloat4(&m_vCurLook);
+	XMVECTOR left = XMLoadFloat4(&m_vCurLeft);
+	XMVECTOR up = XMLoadFloat4(&m_vCurUp);
+	XMVECTOR tmp = XMLoadFloat4(&m_vPos);
 	
 	tmp += look * move.x + left * move.y + up * move.z;
 
-	XMStoreFloat4(&mvPos, tmp);
+	XMStoreFloat4(&m_vPos, tmp);
 	
 	Update();
 }
 
-// rotate the camera up and down, around mvStartLeft
+// rotate the camera up and down, around m_vStartLeft
 void Camera::Pitch(float theta) {
-	mPitch += theta;
-	mPitch = mPitch > 360 ? mPitch - 360 : mPitch < -360 ? mPitch + 360 : mPitch;
+	m_anglePitch += theta;
+	m_anglePitch = m_anglePitch > 360 ? m_anglePitch - 360 : m_anglePitch < -360 ? m_anglePitch + 360 : m_anglePitch;
 
 	Update();
 }
 
-// rotate the camera left and right, around mvStartUp
+// rotate the camera left and right, around m_vStartUp
 void Camera::Yaw(float theta) {
-	mYaw += theta;
-	mYaw = mYaw > 360 ? mYaw - 360 : mYaw < -360 ? mYaw + 360 : mYaw;
+	m_angleYaw += theta;
+	m_angleYaw = m_angleYaw > 360 ? m_angleYaw - 360 : m_angleYaw < -360 ? m_angleYaw + 360 : m_angleYaw;
 
 	Update();
 }
 
-// rotate the camera clockwise and counter-clockwise, around mvStartLook
+// rotate the camera clockwise and counter-clockwise, around m_vStartLook
 void Camera::Roll(float theta) {
-	mRoll += theta;
-	mRoll = mRoll > 360 ? mRoll - 360 : mRoll < -360 ? mRoll + 360 : mRoll;
+	m_angleRoll += theta;
+	m_angleRoll = m_angleRoll > 360 ? m_angleRoll - 360 : m_angleRoll < -360 ? m_angleRoll + 360 : m_angleRoll;
 
 	Update();
 }
 
 void Camera::Update() {
 	// rotate camera based on yaw, pitch, and roll.
-	XMVECTOR look = XMLoadFloat4(&mvStartLook);
-	XMVECTOR up = XMLoadFloat4(&mvStartUp);
+	XMVECTOR look = XMLoadFloat4(&m_vStartLook);
+	XMVECTOR up = XMLoadFloat4(&m_vStartUp);
 	
-	float pitch_rad = XMConvertToRadians(mPitch);
-	float yaw_rad = XMConvertToRadians(mYaw);
-	float roll_rad = XMConvertToRadians(mRoll);
+	float pitch_rad = XMConvertToRadians(m_anglePitch);
+	float yaw_rad = XMConvertToRadians(m_angleYaw);
+	float roll_rad = XMConvertToRadians(m_angleRoll);
 
 	XMMATRIX rot, rotp, roty, rotr;
-	XMVECTOR left = XMLoadFloat4(&mvStartLeft);
+	XMVECTOR left = XMLoadFloat4(&m_vStartLeft);
 
 	rotp = XMMatrixRotationAxis(left, pitch_rad);
 	roty = XMMatrixRotationAxis(up, yaw_rad);
@@ -332,13 +332,13 @@ void Camera::Update() {
 	left = XMVector3Normalize(XMVector3Transform(left, rot));
 	up = XMVector3Cross(left, look);
 
-	XMStoreFloat4(&mvCurLook, look);
-	XMStoreFloat4(&mvCurUp, up);
-	XMStoreFloat4(&mvCurLeft, left);
+	XMStoreFloat4(&m_vCurLook, look);
+	XMStoreFloat4(&m_vCurUp, up);
+	XMStoreFloat4(&m_vCurLeft, left);
 
 	// build view matrix
-	XMVECTOR camera = XMLoadFloat4(&mvPos);
+	XMVECTOR camera = XMLoadFloat4(&m_vPos);
 	XMVECTOR target = camera + look; // add camera position plus target direction to get target location for view matrix function
 	XMMATRIX view = XMMatrixLookAtLH(camera, target, up);
-	XMStoreFloat4x4(&mmView, view);
+	XMStoreFloat4x4(&m_mView, view);
 }

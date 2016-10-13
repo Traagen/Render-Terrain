@@ -10,7 +10,7 @@ Description:	Class for creating, managing, and rendering a scene.
 #include <stdlib.h>
 
 Scene::Scene(int height, int width, Device* DEV) : 
-	m_ResMgr(DEV, FRAME_BUFFER_COUNT, 6, 23, 0), C(height, width), DNC(6000, 4096) {
+	m_ResMgr(DEV, FRAME_BUFFER_COUNT, 6, 23, 0), m_Cam(height, width), m_DNC(6000, 4096) {
 	m_pDev = DEV;
 	m_pT = nullptr;
 
@@ -30,17 +30,17 @@ Scene::Scene(int height, int width, Device* DEV) :
 	CloseCommandLists();
 
 	// create a viewport and scissor rectangle.
-	mViewport.TopLeftX = 0;
-	mViewport.TopLeftY = 0;
-	mViewport.Width = (float)width;
-	mViewport.Height = (float)height;
-	mViewport.MinDepth = 0;
-	mViewport.MaxDepth = 1;
+	m_vpMain.TopLeftX = 0;
+	m_vpMain.TopLeftY = 0;
+	m_vpMain.Width = (float)width;
+	m_vpMain.Height = (float)height;
+	m_vpMain.MinDepth = 0;
+	m_vpMain.MaxDepth = 1;
 
-	mScissorRect.left = 0;
-	mScissorRect.top = 0;
-	mScissorRect.right = width;
-	mScissorRect.bottom = height;
+	m_srMain.left = 0;
+	m_srMain.top = 0;
+	m_srMain.right = width;
+	m_srMain.bottom = height;
 
 	// Initialize Graphics Pipelines for 2D and 3D rendering.
 	InitPipelineTerrain2D();
@@ -49,20 +49,20 @@ Scene::Scene(int height, int width, Device* DEV) :
 }
 
 Scene::~Scene() {
-	while (!mlRootSigs.empty()) {
-		ID3D12RootSignature* sigRoot = mlRootSigs.back();
+	while (!m_listRootSigs.empty()) {
+		ID3D12RootSignature* sigRoot = m_listRootSigs.back();
 
 		if (sigRoot) sigRoot->Release();
 
-		mlRootSigs.pop_back();
+		m_listRootSigs.pop_back();
 	}
 
-	while (!mlPSOs.empty()) {
-		ID3D12PipelineState* pso = mlPSOs.back();
+	while (!m_listPSOs.empty()) {
+		ID3D12PipelineState* pso = m_listPSOs.back();
 
 		if (pso) pso->Release();
 
-		mlPSOs.pop_back();
+		m_listPSOs.pop_back();
 	}
 
 	if (m_pT) {
@@ -112,7 +112,7 @@ void Scene::InitPipelineTerrain2D() {
 		D3D12_ROOT_SIGNATURE_FLAG_DENY_VERTEX_SHADER_ROOT_ACCESS);
 	ID3D12RootSignature* sigRoot;
 	m_pDev->CreateRootSig(&descRoot, sigRoot);
-	mlRootSigs.push_back(sigRoot); // save a copy of the pointer to the root signature.
+	m_listRootSigs.push_back(sigRoot); // save a copy of the pointer to the root signature.
 
 	D3D12_SHADER_BYTECODE bcPS = {};
 	D3D12_SHADER_BYTECODE bcVS = {};
@@ -140,7 +140,7 @@ void Scene::InitPipelineTerrain2D() {
 	
 	ID3D12PipelineState* pso;
 	m_pDev->CreatePSO(&descPSO, pso);
-	mlPSOs.push_back(pso); // save a copy of the pointer to the PSO.
+	m_listPSOs.push_back(pso); // save a copy of the pointer to the PSO.
 }
 
 // Initialize the root signature and pipeline state object for rendering the terrain in 3D.
@@ -193,7 +193,7 @@ void Scene::InitPipelineTerrain3D() {
 		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 	ID3D12RootSignature* sigRoot;
 	m_pDev->CreateRootSig(&descRoot, sigRoot);
-	mlRootSigs.push_back(sigRoot);
+	m_listRootSigs.push_back(sigRoot);
 
 	D3D12_SHADER_BYTECODE bcPS = {};
 	D3D12_SHADER_BYTECODE bcVS = {};
@@ -241,7 +241,7 @@ void Scene::InitPipelineTerrain3D() {
 
 	ID3D12PipelineState* pso;
 	m_pDev->CreatePSO(&descPSO, pso);
-	mlPSOs.push_back(pso);
+	m_listPSOs.push_back(pso);
 }
 
 // Initialize the root signature and pipeline state object for rendering to the shadow map.
@@ -278,7 +278,7 @@ void Scene::InitPipelineShadowMap() {
 	descRoot.Init(_countof(paramsRoot), paramsRoot, 2, descSamplers, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT | D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS);
 	ID3D12RootSignature* sigRoot;
 	m_pDev->CreateRootSig(&descRoot, sigRoot);
-	mlRootSigs.push_back(sigRoot);
+	m_listRootSigs.push_back(sigRoot);
 
 	D3D12_SHADER_BYTECODE bcVS = {};
 	D3D12_SHADER_BYTECODE bcHS = {};
@@ -327,19 +327,19 @@ void Scene::InitPipelineShadowMap() {
 
 	ID3D12PipelineState* pso;
 	m_pDev->CreatePSO(&descPSO, pso);
-	mlPSOs.push_back(pso);
+	m_listPSOs.push_back(pso);
 }
 
 void Scene::SetViewport(ID3D12GraphicsCommandList* cmdList) {
-	cmdList->RSSetViewports(1, &mViewport);
-	cmdList->RSSetScissorRects(1, &mScissorRect);
+	cmdList->RSSetViewports(1, &m_vpMain);
+	cmdList->RSSetScissorRects(1, &m_srMain);
 }
 
 void Scene::DrawShadowMap(ID3D12GraphicsCommandList* cmdList) {
-	m_pFrames[mFrame]->BeginShadowPass(cmdList);
+	m_pFrames[m_iFrame]->BeginShadowPass(cmdList);
 
-	cmdList->SetPipelineState(mlPSOs[2]);
-	cmdList->SetGraphicsRootSignature(mlRootSigs[2]);
+	cmdList->SetPipelineState(m_listPSOs[2]);
+	cmdList->SetGraphicsRootSignature(m_listRootSigs[2]);
 
 	ID3D12DescriptorHeap* heaps[] = { m_ResMgr.GetCBVSRVUAVHeap() };
 	cmdList->SetDescriptorHeaps(_countof(heaps), heaps);
@@ -350,25 +350,25 @@ void Scene::DrawShadowMap(ID3D12GraphicsCommandList* cmdList) {
 	for (int i = 0; i < 4; ++i) {
 		// fill in this cascade's shadow constants.
 		ShadowMapShaderConstants constants;
-		constants.shadowViewProj = DNC.GetShadowViewProjMatrix(i);
-		constants.eye = C.GetEyePosition();
-		DNC.GetShadowFrustum(i, constants.frustum);
-		m_pFrames[mFrame]->SetShadowConstants(constants, i);
-		m_pFrames[mFrame]->AttachShadowPassResources(i, cmdList, 3);
+		constants.shadowViewProj = m_DNC.GetShadowViewProjMatrix(i);
+		constants.eye = m_Cam.GetEyePosition();
+		m_DNC.GetShadowFrustum(i, constants.frustum);
+		m_pFrames[m_iFrame]->SetShadowConstants(constants, i);
+		m_pFrames[m_iFrame]->AttachShadowPassResources(i, cmdList, 3);
 
 		// mDrawMode = 0/false for 2D rendering and 1/true for 3D rendering
 		m_pT->Draw(cmdList, true);
 	}
 
-	m_pFrames[mFrame]->EndShadowPass(cmdList);
+	m_pFrames[m_iFrame]->EndShadowPass(cmdList);
 }
 
 void Scene::DrawTerrain(ID3D12GraphicsCommandList* cmdList) {
 	const float clearColor[] = { 0.2f, 0.6f, 1.0f, 1.0f };
-	m_pFrames[mFrame]->BeginRenderPass(cmdList, clearColor);
+	m_pFrames[m_iFrame]->BeginRenderPass(cmdList, clearColor);
 
-	cmdList->SetPipelineState(mlPSOs[mDrawMode]);
-	cmdList->SetGraphicsRootSignature(mlRootSigs[mDrawMode]);
+	cmdList->SetPipelineState(m_listPSOs[m_drawMode]);
+	cmdList->SetGraphicsRootSignature(m_listRootSigs[m_drawMode]);
 
 	SetViewport(cmdList);
 
@@ -378,40 +378,40 @@ void Scene::DrawTerrain(ID3D12GraphicsCommandList* cmdList) {
 	// Tell the terrain to attach its resources.
 	m_pT->AttachTerrainResources(cmdList, 0, 1, 2);
 
-	if (mDrawMode) {
+	if (m_drawMode) {
 		// set the constant buffers.
 		XMFLOAT4 frustum[6];
-		C.GetViewFrustum(frustum);
+		m_Cam.GetViewFrustum(frustum);
 
 		PerFrameConstantBuffer constants;
-		constants.viewproj = C.GetViewProjectionMatrixTransposed();
+		constants.viewproj = m_Cam.GetViewProjectionMatrixTransposed();
 		for (int i = 0; i < 4; ++i) {
-			constants.shadowtexmatrices[i] = DNC.GetShadowViewProjTexMatrix(i);
+			constants.shadowtexmatrices[i] = m_DNC.GetShadowViewProjTexMatrix(i);
 		}
-		constants.eye = C.GetEyePosition();
+		constants.eye = m_Cam.GetEyePosition();
 		constants.frustum[0] = frustum[0];
 		constants.frustum[1] = frustum[1];
 		constants.frustum[2] = frustum[2];
 		constants.frustum[3] = frustum[3];
 		constants.frustum[4] = frustum[4];
 		constants.frustum[5] = frustum[5];
-		constants.light = DNC.GetLight();
-		constants.useTextures = mUseTextures;
-		m_pFrames[mFrame]->SetFrameConstants(constants);
-		m_pFrames[mFrame]->AttachFrameResources(cmdList, 4, 3);
+		constants.light = m_DNC.GetLight();
+		constants.useTextures = m_UseTextures;
+		m_pFrames[m_iFrame]->SetFrameConstants(constants);
+		m_pFrames[m_iFrame]->AttachFrameResources(cmdList, 4, 3);
 
 		m_pT->AttachMaterialResources(cmdList, 5);
 	}
 	
 	// mDrawMode = 0/false for 2D rendering and 1/true for 3D rendering
-	m_pT->Draw(cmdList, mDrawMode);
+	m_pT->Draw(cmdList, m_drawMode);
 
-	m_pFrames[mFrame]->EndRenderPass(cmdList);
+	m_pFrames[m_iFrame]->EndRenderPass(cmdList);
 }
 
 void Scene::Draw() {
-	m_pFrames[mFrame]->Reset();
-	m_pFrames[mFrame]->AttachCommandList(m_pCmdList);
+	m_pFrames[m_iFrame]->Reset();
+	m_pFrames[m_iFrame]->AttachCommandList(m_pCmdList);
 
 	DrawShadowMap(m_pCmdList);
 	
@@ -426,9 +426,9 @@ void Scene::Draw() {
 void Scene::Update() {
 	float h = m_pT->GetHeightMapDepth() / 2.0f;
 	float w = m_pT->GetHeightMapWidth() / 2.0f;
-	DNC.Update(XMFLOAT3(w, h, 0.0f), sqrtf(w * w + h * h), &C);
+	m_DNC.Update(XMFLOAT3(w, h, 0.0f), sqrtf(w * w + h * h), &m_Cam);
 
-	mFrame = m_pDev->GetCurrentBackBuffer();
+	m_iFrame = m_pDev->GetCurrentBackBuffer();
 	Draw();
 }
 
@@ -436,42 +436,42 @@ void Scene::Update() {
 void Scene::HandleKeyboardInput(UINT key) {
 	switch (key) {
 		case _W:
-			if (mDrawMode > 0) C.Translate(XMFLOAT3(MOVE_STEP, 0.0f, 0.0f));
+			if (m_drawMode > 0) m_Cam.Translate(XMFLOAT3(MOVE_STEP, 0.0f, 0.0f));
 			break;
 		case _S:
-			if (mDrawMode > 0) C.Translate(XMFLOAT3(-MOVE_STEP, 0.0f, 0.0f));
+			if (m_drawMode > 0) m_Cam.Translate(XMFLOAT3(-MOVE_STEP, 0.0f, 0.0f));
 			break;
 		case _A:
-			if (mDrawMode > 0) C.Translate(XMFLOAT3(0.0f, MOVE_STEP, 0.0f));
+			if (m_drawMode > 0) m_Cam.Translate(XMFLOAT3(0.0f, MOVE_STEP, 0.0f));
 			break;
 		case _D:
-			if (mDrawMode > 0) C.Translate(XMFLOAT3(0.0f, -MOVE_STEP, 0.0f));
+			if (m_drawMode > 0) m_Cam.Translate(XMFLOAT3(0.0f, -MOVE_STEP, 0.0f));
 			break;
 		case _Q:
-			if (mDrawMode > 0) C.Translate(XMFLOAT3(0.0f, 0.0f, MOVE_STEP));
+			if (m_drawMode > 0) m_Cam.Translate(XMFLOAT3(0.0f, 0.0f, MOVE_STEP));
 			break;
 		case _Z:
-			if (mDrawMode > 0) C.Translate(XMFLOAT3(0.0f, 0.0f, -MOVE_STEP));
+			if (m_drawMode > 0) m_Cam.Translate(XMFLOAT3(0.0f, 0.0f, -MOVE_STEP));
 			break;
 		case _1: // draw in 2D. draw heightmap.
-			mDrawMode = 0;
+			m_drawMode = 0;
 			break;
 		case _2: // draw in 3D.
-			mDrawMode = 1;
+			m_drawMode = 1;
 			break;
 		case _T:
-			mUseTextures = !mUseTextures;
+			m_UseTextures = !m_UseTextures;
 			break;
 		case VK_SPACE:
-			DNC.TogglePause();
+			m_DNC.TogglePause();
 			break;
 	}
 }
 
 // function allowing the main program to pass mouse input to the scene.
 void Scene::HandleMouseInput(int x, int y) {
-	if (mDrawMode > 0) {
-		C.Pitch(ROT_ANGLE * y);
-		C.Yaw(-ROT_ANGLE * x);
+	if (m_drawMode > 0) {
+		m_Cam.Pitch(ROT_ANGLE * y);
+		m_Cam.Yaw(-ROT_ANGLE * x);
 	}
 }

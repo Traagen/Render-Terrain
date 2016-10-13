@@ -2,7 +2,7 @@
 Camera.h
 
 Author:			Chris Serson
-Last Edited:	August 18, 2016
+Last Edited:	October 12, 2016
 
 Description:	Class for creating and controlling the camera
 
@@ -44,17 +44,17 @@ public:
 
 	// combine the view and projection matrices and transpose the result
 	XMFLOAT4X4 GetViewProjectionMatrixTransposed();
-	// returns mvPos;
-	XMFLOAT4 GetEyePosition() { return mvPos; }
+	// returns m_vPos;
+	XMFLOAT4 GetEyePosition() { return m_vPos; }
 	// Return the 6 planes forming the view frustum. Stored in the array planes.
 	void GetViewFrustum(XMFLOAT4 planes[6]);
-	// Move the camera along its 3 axis: mvStartLook (forward/backward), mvStartLeft (left/right), mvStartUp (up/down)
+	// Move the camera along its 3 axis: m_vStartLook (forward/backward), m_vStartLeft (left/right), m_vStartUp (up/down)
 	void Translate(XMFLOAT3 move);
-	// rotate the camera up and down, around mvStartLeft
+	// rotate the camera up and down, around m_vStartLeft
 	void Pitch(float theta);
-	// rotate the camera left and right, around mvStartUp
+	// rotate the camera left and right, around m_vStartUp
 	void Yaw(float theta);
-	// rotate the camera clockwise and counter-clockwise, around mvStartLook
+	// rotate the camera clockwise and counter-clockwise, around m_vStartLook
 	void Roll(float theta);
 	// calculate a bounding sphere center and radius for the current view matrix and the projection matrix defined by near/far.
 	void GetBoundingSphereByNearFar(float near, float far, XMFLOAT4& center, float& radius);
@@ -63,21 +63,21 @@ public:
 private:
 	void Update();
 	
-	XMFLOAT4X4	mmProjection;	// Projection matrix
-	XMFLOAT4X4	mmView;			// View matrix
-	XMFLOAT4	mvPos;			// Camera position
-	XMFLOAT4	mvStartLook;	// Starting lookat vector
-	XMFLOAT4	mvStartUp;		// Starting up vector
-	XMFLOAT4	mvStartLeft;	// Starting left vector
-	XMFLOAT4	mvCurLook;		// Current lookat vector
-	XMFLOAT4	mvCurUp;		// Current up vector
-	XMFLOAT4	mvCurLeft;		// Current left vector
-	int			mWidth;
-	int			mHeight;
-	float		mHFOV;
-	float		mVFOV;
-	float		mYaw;
-	float		mPitch;
-	float		mRoll;
+	XMFLOAT4X4	m_mProjection;	// Projection matrix
+	XMFLOAT4X4	m_mView;			// View matrix
+	XMFLOAT4	m_vPos;			// Camera position
+	XMFLOAT4	m_vStartLook;	// Starting lookat vector
+	XMFLOAT4	m_vStartUp;		// Starting up vector
+	XMFLOAT4	m_vStartLeft;	// Starting left vector
+	XMFLOAT4	m_vCurLook;		// Current lookat vector
+	XMFLOAT4	m_vCurUp;		// Current up vector
+	XMFLOAT4	m_vCurLeft;		// Current left vector
+	int			m_wScreen;
+	int			m_hScreen;
+	float		m_fovHorizontal;
+	float		m_fovVertical;
+	float		m_angleYaw;
+	float		m_anglePitch;
+	float		m_angleRoll;
 };
 
