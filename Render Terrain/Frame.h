@@ -10,6 +10,8 @@ Usage:			- Frame F(...);
 				- Frame* F; F = new Frame(...);
 				- Proper shutdown is handled by the destructor.
 				- Create a Frame object for each frame, ie 3 for triple buffering.
+
+Future Work:	- Add support for multi-threading.
 */
 #pragma once
 

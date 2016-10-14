@@ -219,7 +219,7 @@ void ResourceManager::AddSampler(D3D12_SAMPLER_DESC* desc, D3D12_CPU_DESCRIPTOR_
 // takes a pointer to the existing resource, adds it to the list of resources, and returns the index to that resource.
 unsigned int ResourceManager::AddExistingResource(ID3D12Resource* tex) {
 	m_listResources.push_back(tex);
-	return m_listResources.size() - 1;
+	return (unsigned int)m_listResources.size() - 1;
 }
 
 // Create a new empty buffer. A pointer to the buffer is stored in buffer and index in list of resources is returned.
@@ -228,7 +228,7 @@ unsigned int ResourceManager::NewBuffer(ID3D12Resource*& buffer, D3D12_RESOURCE_
 	m_pDev->CreateCommittedResource(buffer, descBuffer, props, flags, state, clear);
 
 	m_listResources.push_back(buffer);
-	return m_listResources.size() - 1;
+	return (unsigned int)m_listResources.size() - 1;
 }
 
 // Create a new empty buffer at index i in resource list, over-writing existing pointer.
@@ -261,7 +261,7 @@ void ResourceManager::UploadToBuffer(unsigned int i, unsigned int numSubResource
 		initialState, D3D12_RESOURCE_STATE_COPY_DEST));
 
 	auto size = GetRequiredIntermediateSize(m_listResources[i], 0, numSubResources);
-	size = pow(2, ceilf(log(size) / log(2))); // round size up to the next power of 2 to ensure good alignment in upload buffer.
+	size = (UINT64)pow(2.0, ceil(log(size) / log(2))); // round size up to the next power of 2 to ensure good alignment in upload buffer.
 
 	if (size > DEFAULT_UPLOAD_BUFFER_SIZE) {
 		// then we're going to have to create a new temporary buffer.
@@ -317,14 +317,15 @@ void ResourceManager::UploadToBuffer(unsigned int i, unsigned int numSubResource
 		// load the command list.
 		ID3D12CommandList* lCmds[] = { m_pCmdList };
 		m_pDev->ExecuteCommandLists(lCmds, __crt_countof(lCmds));
+
+		// add fence signal.
+		++m_valFence;
+		m_pDev->SetFence(m_pFence, m_valFence);
 	}
 }
 
 // Wait for GPU to signal it has completed with the previous iteration of this frame.
 void ResourceManager::WaitForGPU() {
-	// add fence signal.
-	++m_valFence;
-	m_pDev->SetFence(m_pFence, m_valFence);
 	if (FAILED(m_pFence->SetEventOnCompletion(m_valFence, m_hdlFenceEvent))) {
 		throw GFX_Exception("ResourceManager::WaitForGPU failed to SetEventOnCompletion.");
 	}
@@ -353,7 +354,7 @@ unsigned int ResourceManager::LoadFile(const char* fn, unsigned int& h, unsigned
 	}
 
 	m_listFileData.push_back(data);
-	return m_listFileData.size() - 1;
+	return (unsigned int)m_listFileData.size() - 1;
 }
 
 // get the data saved at index i in m_listFileData.

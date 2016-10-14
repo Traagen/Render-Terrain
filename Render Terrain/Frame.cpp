@@ -217,9 +217,11 @@ void Frame::Reset() {
 	WaitForGPU();
 
 	// reset command allocator.
-	if (FAILED(m_pCmdAllocator->Reset())) {
-		throw GFX_Exception("Frame::Reset: m_pCmdAllocator Reset failed.");
-	}
+	// This appears to only be necessary when you want to associate a different command list with the command allocator.
+	// You can simply reset the same command list and keep going without resetting the command allocator.
+//	if (FAILED(m_pCmdAllocator->Reset())) {
+//		throw GFX_Exception("Frame::Reset: m_pCmdAllocator Reset failed.");
+//	}
 }
 
 // Resets a command list for use with this frame.

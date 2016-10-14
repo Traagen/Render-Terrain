@@ -2,7 +2,7 @@
 DayNightCycle.h
 
 Author:			Chris Serson
-Last Edited:	October 12, 2016
+Last Edited:	October 14, 2016
 
 Description:	Class for managing the Day/Night Cycle for the scene.
 
@@ -62,7 +62,7 @@ public:
 	DayNightCycle(UINT period, UINT shadowSize);
 	~DayNightCycle();
 
-	void Update(XMFLOAT3 centerBS, float radiusBS, Camera* cam);
+	void Update(BoundingSphere& bsScene, Camera* cam);
 	void TogglePause() { m_isPaused = !m_isPaused; }
 
 	LightSource GetLight() { return m_dlSun.GetLight(); }
@@ -71,7 +71,7 @@ public:
 	void GetShadowFrustum(int i, XMFLOAT4 planes[6]);
 
 private:
-	void CalculateShadowMatrices(XMFLOAT3 centerBS, float radiusBS, Camera* cam);
+	void CalculateShadowMatrices(BoundingSphere& bsScene, Camera* cam);
 	void CalculateShadowFrustum(int i, XMMATRIX VP);
 		
 	UINT						m_Period;	// the number of game milliseconds that each real time millisecond should count as.

@@ -165,11 +165,14 @@
     <ClCompile Include="Material.cpp" />
     <ClCompile Include="ResourceManager.cpp" />
     <ClCompile Include="Scene.cpp" />
+    <ClCompile Include="BoundingVolume.cpp" />
     <ClCompile Include="Terrain.cpp" />
     <ClCompile Include="Window.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="BoundingVolume.h" />
     <ClInclude Include="Camera.h" />
+    <ClInclude Include="Common.h" />
     <ClInclude Include="D3DX12.h" />
     <ClInclude Include="DayNightCycle.h" />
     <ClInclude Include="DirectionalLight.h" />

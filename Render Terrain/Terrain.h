@@ -2,7 +2,7 @@
 Terrain.h
 
 Author:			Chris Serson
-Last Edited:	October 12, 2016
+Last Edited:	October 14, 2016
 
 Description:	Class for loading height map and displacement map data
 				with which to render terrain. Also contains a reference
@@ -26,6 +26,7 @@ Future Work:	- Add a colour palette.
 
 #include "Graphics.h"
 #include "Material.h"
+#include "BoundingVolume.h"
 #include <vector>
 
 using namespace graphics;
@@ -59,12 +60,9 @@ public:
 	// Attach the material resources. Requires root descriptor table index.
 	void AttachMaterialResources(ID3D12GraphicsCommandList* cmdList, unsigned int srvDescTableIndex);
 
-	UINT GetHeightMapWidth() { return m_wHeightMap; }
-	UINT GetHeightMapDepth() { return m_hHeightMap; }
+	BoundingSphere GetBoundingSphere() { return m_BoundingSphere; }
+	float GetHeightAtPoint(float x, float y);
 	
-	// Once the GPU has completed uploading buffers to GPU memory, we need to free system memory.
-	void DeleteVertexAndIndexArrays();
-
 private:
 	// Generates an array of vertices and an array of indices.
 	void CreateMesh3D();
@@ -80,7 +78,13 @@ private:
 	void LoadDisplacementMap(const char* fnMap);
 	// calculate the minimum and maximum z values for vertices between the provide bounds.
 	XMFLOAT2 CalcZBounds(Vertex topLeft, Vertex bottomRight);
-	
+	// Clean up array data
+	void DeleteVertexAndIndexArrays();
+
+	float GetHeightMapValueAtPoint(float x, float y);
+	float GetDisplacementMapValueAtPoint(float x, float y);
+	XMFLOAT3 CalculateNormalAtPoint(float x, float y);
+
 	TerrainMaterial*			m_pMat;
 	ResourceManager*			m_pResMgr;
 	D3D12_VERTEX_BUFFER_VIEW	m_viewVertexBuffer;
@@ -97,12 +101,13 @@ private:
 	unsigned int				m_hHeightMap;
 	unsigned int				m_wDisplacementMap;
 	unsigned int				m_hDisplacementMap;
-	int							m_hBase;
+	float						m_hBase;
 	unsigned long				m_numVertices;
 	unsigned long				m_numIndices;
 	float						m_scaleHeightMap;
 	Vertex*						m_dataVertices;		// buffer to contain vertex array prior to upload.
 	UINT*						m_dataIndices;		// buffer to contain index array prior to upload.
 	TerrainShaderConstants*		m_pConstants;
+	BoundingSphere				m_BoundingSphere;
 };
 

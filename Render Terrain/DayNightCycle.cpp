@@ -2,7 +2,7 @@
 DayNightCycle.cpp
 
 Author:			Chris Serson
-Last Edited:	October 12, 2016
+Last Edited:	October 14, 2016
 
 Description:	Class for managing the Day/Night Cycle for the scene.
 */
@@ -27,7 +27,7 @@ DayNightCycle::DayNightCycle(UINT period, UINT shadowSize) : m_dlSun(XMFLOAT4(0.
 DayNightCycle::~DayNightCycle() {
 }
 
-void DayNightCycle::Update(XMFLOAT3 centerBS, float radiusBS, Camera* cam) {
+void DayNightCycle::Update(BoundingSphere& bsScene, Camera* cam) {
 	time_point<system_clock> now = system_clock::now();
 
 	if (!m_isPaused) {
@@ -109,16 +109,17 @@ void DayNightCycle::Update(XMFLOAT3 centerBS, float radiusBS, Camera* cam) {
 	// update the time for the next pass.
 	m_tLast = now;
 
-	CalculateShadowMatrices(centerBS, radiusBS, cam);
+	CalculateShadowMatrices(bsScene, cam);
 }
 
-void DayNightCycle::CalculateShadowMatrices(XMFLOAT3 centerBS, float radiusBS, Camera* cam) {
+void DayNightCycle::CalculateShadowMatrices(BoundingSphere& bsScene, Camera* cam) {
 	LightSource light = m_dlSun.GetLight();
 	XMVECTOR lightdir = XMLoadFloat3(&light.direction);
-	XMVECTOR targetpos = XMLoadFloat3(&centerBS);
+	XMFLOAT3 vCenterScene = bsScene.GetCenter();
+	XMVECTOR targetpos = XMLoadFloat3(&vCenterScene);
 	
 	float offset = (float)(m_sizeShadowMap + 8) / (float)m_sizeShadowMap; // add padding to projection for rounding and for pcf.
-	float radiusScene = ceilf(radiusBS) * offset;
+	float radiusScene = ceilf(bsScene.GetRadius()) * offset;
 
 	XMVECTOR lightpos = targetpos - 2.0f * radiusScene * lightdir;
 	XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
@@ -130,11 +131,11 @@ void DayNightCycle::CalculateShadowMatrices(XMFLOAT3 centerBS, float radiusBS, C
 	// create the cascades.
 	for (int i = 0; i < 3; ++i) {
 		Frustum fCascade = cam->CalculateFrustumByNearFar(CASCADE_PLANES[i], CASCADE_PLANES[i + 1]);
-		float radius = ceilf(fCascade.radius);
+		float radius = ceilf(fCascade.bs.GetRadius());
 		radius *= offset;
-		XMVECTOR c = XMLoadFloat3(&fCascade.center);
+		XMVECTOR c = XMLoadFloat3(&fCascade.bs.GetCenter());
 		XMStoreFloat4(&spherecenterls, XMVector3TransformCoord(c, V));
-		XMVECTOR sc = XMLoadFloat3(&centerBS);
+		XMVECTOR sc = XMLoadFloat3(&vCenterScene);
 		XMFLOAT4 cbs;
 		XMStoreFloat4(&cbs, XMVector3TransformCoord(sc, V));
 
@@ -193,7 +194,7 @@ void DayNightCycle::CalculateShadowMatrices(XMFLOAT3 centerBS, float radiusBS, C
 		XMStoreFloat4x4(&m_amShadowViewProjTexs[i], XMMatrixTranspose(S));
 	}
 
-	XMVECTOR c = XMLoadFloat3(&centerBS);
+	XMVECTOR c = XMLoadFloat3(&vCenterScene);
 	XMStoreFloat4(&spherecenterls, XMVector3TransformCoord(c, V));
 
 	// orthographic frustum

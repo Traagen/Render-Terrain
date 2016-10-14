@@ -2,7 +2,7 @@
 Camera.h
 
 Author:			Chris Serson
-Last Edited:	October 12, 2016
+Last Edited:	October 14, 2016
 
 Description:	Class for creating and controlling the camera
 
@@ -20,6 +20,7 @@ Future Work:	- I'm not 100% certain everything is correct when Roll is used. Wil
 #pragma once
 
 #include <DirectXMath.h>
+#include "BoundingVolume.h"
 
 using namespace DirectX;
 
@@ -32,8 +33,7 @@ struct Frustum {
 	XMFLOAT3 flt;
 	XMFLOAT3 frb;
 	XMFLOAT3 frt;
-	XMFLOAT3 center;
-	float radius;
+	BoundingSphere bs;
 };
 
 class Camera
@@ -56,15 +56,16 @@ public:
 	void Yaw(float theta);
 	// rotate the camera clockwise and counter-clockwise, around m_vStartLook
 	void Roll(float theta);
-	// calculate a bounding sphere center and radius for the current view matrix and the projection matrix defined by near/far.
-	void GetBoundingSphereByNearFar(float near, float far, XMFLOAT4& center, float& radius);
+	// find a view frustum based on the current view matrix and the provided near and far planes.
 	Frustum CalculateFrustumByNearFar(float near, float far);
+	// Lock the Camera's eye to the supplied position.
+	void LockPosition(XMFLOAT4 p);
 
 private:
 	void Update();
 	
 	XMFLOAT4X4	m_mProjection;	// Projection matrix
-	XMFLOAT4X4	m_mView;			// View matrix
+	XMFLOAT4X4	m_mView;		// View matrix
 	XMFLOAT4	m_vPos;			// Camera position
 	XMFLOAT4	m_vStartLook;	// Starting lookat vector
 	XMFLOAT4	m_vStartUp;		// Starting up vector

@@ -2,7 +2,7 @@
 Scene.cpp
 
 Author:			Chris Serson
-Last Edited:	October 12, 2016
+Last Edited:	October 14, 2016
 
 Description:	Class for creating, managing, and rendering a scene.
 */
@@ -404,7 +404,7 @@ void Scene::DrawTerrain(ID3D12GraphicsCommandList* cmdList) {
 	}
 	
 	// mDrawMode = 0/false for 2D rendering and 1/true for 3D rendering
-	m_pT->Draw(cmdList, m_drawMode);
+	m_pT->Draw(cmdList, (bool)m_drawMode);
 
 	m_pFrames[m_iFrame]->EndRenderPass(cmdList);
 }
@@ -424,9 +424,13 @@ void Scene::Draw() {
 }
 
 void Scene::Update() {
-	float h = m_pT->GetHeightMapDepth() / 2.0f;
-	float w = m_pT->GetHeightMapWidth() / 2.0f;
-	m_DNC.Update(XMFLOAT3(w, h, 0.0f), sqrtf(w * w + h * h), &m_Cam);
+	if (m_LockToTerrain) {
+		XMFLOAT4 eye = m_Cam.GetEyePosition();
+		float h = m_pT->GetHeightAtPoint(eye.x, eye.y) + 2;
+		m_Cam.LockPosition(XMFLOAT4(eye.x, eye.y, h, 1.0f));
+	}
+
+	m_DNC.Update(m_pT->GetBoundingSphere(), &m_Cam);
 
 	m_iFrame = m_pDev->GetCurrentBackBuffer();
 	Draw();
@@ -461,6 +465,9 @@ void Scene::HandleKeyboardInput(UINT key) {
 			break;
 		case _T:
 			m_UseTextures = !m_UseTextures;
+			break;
+		case _L:
+			m_LockToTerrain = !m_LockToTerrain;
 			break;
 		case VK_SPACE:
 			m_DNC.TogglePause();

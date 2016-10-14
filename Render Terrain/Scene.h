@@ -82,5 +82,6 @@ private:
 	std::vector<ID3D12PipelineState*>	m_listPSOs;
 	int									m_iFrame = 0;
 	bool								m_UseTextures = false;
+	bool								m_LockToTerrain = true;
 };
 
