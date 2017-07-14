@@ -71,7 +71,7 @@ void Terrain::DeleteVertexAndIndexArrays() {
 // generate vertex and index buffers for 3D mesh of terrain
 void Terrain::CreateMesh3D() {
 	// Create a vertex buffer
-	m_scaleHeightMap = (float)m_wHeightMap / 4.0f;
+	m_scaleHeightMap = (float)m_wHeightMap / 16.0f;
 	int tessFactor = 8;
 	int scalePatchX = m_wHeightMap / tessFactor;
 	int scalePatchY = m_hHeightMap / tessFactor;
